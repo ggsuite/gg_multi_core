@@ -1,0 +1,32 @@
+C:\Users\goeran>az repos list --organization https://dev.azure.com/goeranhegenberg --project project123
+
+Output of the command:
+[
+  {
+    "defaultBranch": "refs/heads/main",
+    "id": "0c3de3c5-0272-4723-b87a-a1c9f04438ba",
+    "isDisabled": false,
+    "isFork": null,
+    "isInMaintenance": false,
+    "name": "project123",
+    "parentRepository": null,
+    "project": {
+      "abbreviation": null,
+      "defaultTeamImageUrl": null,
+      "description": null,
+      "id": "790d1bd3-80f7-42af-a414-b552bc857672",
+      "lastUpdateTime": "2025-07-07T22:37:55.21Z",
+      "name": "project123",
+      "revision": 11,
+      "state": "wellFormed",
+      "url": "https://dev.azure.com/goeranhegenberg/_apis/projects/790d1bd3-80f7-42af-a414-b552bc857672",
+      "visibility": "public"
+    },
+    "remoteUrl": "https://goeranhegenberg@dev.azure.com/goeranhegenberg/project123/_git/project123",
+    "size": 0,
+    "sshUrl": "git@ssh.dev.azure.com:v3/goeranhegenberg/project123/project123",
+    "url": "https://dev.azure.com/goeranhegenberg/790d1bd3-80f7-42af-a414-b552bc857672/_apis/git/repositories/0c3de3c5-0272-4723-b87a-a1c9f04438ba",
+    "validRemoteUrls": null,
+    "webUrl": "https://dev.azure.com/goeranhegenberg/project123/_git/project123"
+  }
+]
