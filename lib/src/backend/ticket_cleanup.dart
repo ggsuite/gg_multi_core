@@ -10,8 +10,8 @@ import 'package:gg_console_colors/gg_console_colors.dart';
 import 'package:gg_log/gg_log.dart';
 import 'package:path/path.dart' as path;
 
-import 'package:gg_multi_core/src/backend/git_snapshot.dart';
 import 'package:gg_multi_core/src/backend/trash.dart';
+import 'package:gg_multi_core/src/backend/process_runner.dart';
 
 /// Closes a finished ticket: deletes the remote feature branches, then
 /// moves the **whole** ticket folder into `<root>/.trash/<ticket>`.
@@ -43,7 +43,7 @@ Future<void> cleanUpTicket({
   required GgLog taskLog,
   ProcessRunner? processRunner,
 }) async {
-  final runner = processRunner ?? _defaultProcessRunner;
+  final runner = processRunner ?? defaultProcessRunner;
   final ticketName = path.basename(ticketDir.path);
 
   // Step 1: Delete the remote branches — per repo, from the repos'
@@ -158,23 +158,6 @@ Future<void> _deleteRemoteBranch({
   }
 
   ggLog(cDetail('Deleted remote branch $branchName for $repoName.'));
-}
-
-/// Runs system processes with shell support.
-// coverage:ignore-start
-Future<ProcessResult> _defaultProcessRunner(
-  String executable,
-  List<String> arguments, {
-  String? workingDirectory,
-  Map<String, String>? environment,
-}) {
-  return Process.run(
-    executable,
-    arguments,
-    workingDirectory: workingDirectory,
-    environment: environment,
-    runInShell: true,
-  );
 }
 
 // coverage:ignore-end

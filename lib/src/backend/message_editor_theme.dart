@@ -10,6 +10,9 @@ import 'package:gg_console_colors/gg_console_colors.dart';
 import 'package:gg_one/gg_one.dart' as gg;
 import 'package:interact/interact.dart';
 
+/// Typedef for editing a commit or merge message interactively.
+typedef EditMessage = Future<String?> Function(String initialMessage);
+
 /// SGR sequence switching the terminal back to its default colors.
 const String colorOff = '\x1B[0m';
 
