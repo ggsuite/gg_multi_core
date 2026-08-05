@@ -104,71 +104,70 @@ void main() {
 
       group('extracts Azure org', () {
         test('from SSH URL full', () {
-          const url =
-              'git@ssh.dev.azure.com:v3/mhk-carat/ds_cdm/ds_assembly.git';
+          const url = 'git@ssh.dev.azure.com:v3/xyz-abc/ds_cdm/ds_assembly.git';
           final org = OrganizationUtils.extractOrganizationFromUrl(url);
-          expect(org?.name, equals('mhk-carat'));
+          expect(org?.name, equals('xyz-abc'));
           expect(org?.projectName, equals('ds_cdm'));
           expect(
             org?.url,
-            equals('https://ssh.dev.azure.com:v3/mhk-carat/ds_cdm/'),
+            equals('https://ssh.dev.azure.com:v3/xyz-abc/ds_cdm/'),
           );
         });
 
         test('from HTTPS URL (full, .git)', () {
           const url =
-              'https://ssh.dev.azure.com:v3/mhk-carat/ds_cdm/ds_assembly.git';
+              'https://ssh.dev.azure.com:v3/xyz-abc/ds_cdm/ds_assembly.git';
           final org = OrganizationUtils.extractOrganizationFromUrl(url);
-          expect(org?.name, equals('mhk-carat'));
+          expect(org?.name, equals('xyz-abc'));
           expect(org?.projectName, equals('ds_cdm'));
           expect(
             org?.url,
-            equals('https://ssh.dev.azure.com:v3/mhk-carat/ds_cdm/'),
+            equals('https://ssh.dev.azure.com:v3/xyz-abc/ds_cdm/'),
           );
         });
 
         test('from HTTPS URL (full, no .git, trailing "/")', () {
           const url =
-              'https://ssh.dev.azure.com:v3/mhk-carat/ds_cdm/ds_assembly/';
+              'https://ssh.dev.azure.com:v3/xyz-abc/ds_cdm/ds_assembly/';
           final org = OrganizationUtils.extractOrganizationFromUrl(url);
-          expect(org?.name, equals('mhk-carat'));
+          expect(org?.name, equals('xyz-abc'));
           expect(org?.projectName, equals('ds_cdm'));
           expect(
             org?.url,
-            equals('https://ssh.dev.azure.com:v3/mhk-carat/ds_cdm/'),
+            equals('https://ssh.dev.azure.com:v3/xyz-abc/ds_cdm/'),
           );
         });
 
         test('from HTTPS URL for just project (no repo, ends with "/")', () {
-          const url = 'https://ssh.dev.azure.com:v3/mhk-carat/ds_cdm/';
+          const url = 'https://ssh.dev.azure.com:v3/xyz-abc/ds_cdm/';
           final org = OrganizationUtils.extractOrganizationFromUrl(url);
-          expect(org?.name, equals('mhk-carat'));
+          expect(org?.name, equals('xyz-abc'));
           expect(org?.projectName, equals('ds_cdm'));
           expect(
             org?.url,
-            equals('https://ssh.dev.azure.com:v3/mhk-carat/ds_cdm/'),
+            equals('https://ssh.dev.azure.com:v3/xyz-abc/ds_cdm/'),
           );
         });
 
         test('from HTTPS project URL, no trailing /', () {
-          const url = 'https://ssh.dev.azure.com:v3/mhk-carat/ds_cdm';
+          const url = 'https://ssh.dev.azure.com:v3/xyz-abc/ds_cdm';
           final org = OrganizationUtils.extractOrganizationFromUrl(url);
-          expect(org?.name, equals('mhk-carat'));
+          expect(org?.name, equals('xyz-abc'));
           expect(org?.projectName, equals('ds_cdm'));
           expect(
             org?.url,
-            equals('https://ssh.dev.azure.com:v3/mhk-carat/ds_cdm/'),
+            equals('https://ssh.dev.azure.com:v3/xyz-abc/ds_cdm/'),
           );
         });
 
         test('from HTTPS project URL, trailing #', () {
-          const url = 'https://ssh.dev.azure.com:v3/mhk-carat/ds_cdm#';
+          const url = 'https://ssh.dev.azure.com:v3/xyz-abc/ds_cdm#';
           final org = OrganizationUtils.extractOrganizationFromUrl(url);
-          expect(org?.name, equals('mhk-carat'));
+          expect(org?.name, equals('xyz-abc'));
           expect(org?.projectName, equals('ds_cdm'));
           expect(
             org?.url,
-            equals('https://ssh.dev.azure.com:v3/mhk-carat/ds_cdm/'),
+            equals('https://ssh.dev.azure.com:v3/xyz-abc/ds_cdm/'),
           );
         });
       });

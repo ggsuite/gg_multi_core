@@ -8,15 +8,7 @@ import 'dart:io';
 
 import 'package:gg_console_colors/gg_console_colors.dart';
 import 'package:path/path.dart' as path;
-
-/// Typedef for running processes (for injection & tests).
-typedef ProcessRunner =
-    Future<ProcessResult> Function(
-      String executable,
-      List<String> arguments, {
-      String? workingDirectory,
-      Map<String, String>? environment,
-    });
+import 'package:gg_multi_core/src/backend/process_runner.dart';
 
 /// Runs git with [args] in [repoDir] using [runner] and returns the trimmed
 /// stdout.

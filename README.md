@@ -34,6 +34,9 @@ the foundation the other members of the family (`gg_multi_workspace`,
   feature branches and moves the whole ticket folder to the trash.
 - **Git helpers** (`git_snapshot.dart`): `runGit` and
   `captureUncommitted`, shared by the push and publish flows.
+- **Process running** (`process_runner.dart`): the family's single
+  `ProcessRunner` typedef and `defaultProcessRunner` — one injectable
+  process-runner type for every module and sub-package.
 - **Publish skip check** (`publish_skip_check.dart`): decides whether
   a repo needs a release at all — dependency bumps outside the
   published constraint, or manual (non-`#gg:`) changes since the last

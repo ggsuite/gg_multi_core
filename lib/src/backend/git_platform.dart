@@ -5,7 +5,6 @@
 // found in the LICENSE file in the root of this package.
 
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:gg_console_colors/gg_console_colors.dart';
 import 'package:gg_multi_core/src/backend/organization.dart';
@@ -13,28 +12,7 @@ import 'package:gg_multi_core/src/backend/url_parser.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:gg_multi_core/src/backend/repository.dart';
-
-/// Typedef for running processes (for injection & tests).
-typedef ProcessRunner =
-    Future<ProcessResult> Function(
-      String executable,
-      List<String> arguments, {
-      String? workingDirectory,
-    });
-
-/// Default process runner that uses the system's `Process.run`
-// coverage:ignore-start
-Future<ProcessResult> _defaultProcessRunner(
-  String executable,
-  List<String> arguments, {
-  String? workingDirectory,
-}) => Process.run(
-  executable,
-  arguments,
-  workingDirectory: workingDirectory,
-  runInShell: true,
-);
-// coverage:ignore-end
+import 'package:gg_multi_core/src/backend/process_runner.dart';
 
 /// Interface for Git platforms like GitHub, Azure DevOps, GitLab.
 abstract class GitPlatform {
@@ -59,7 +37,7 @@ abstract class GitPlatform {
 class GitHubPlatform implements GitPlatform {
   /// Constructor accepts an optional process runner for testing.
   GitHubPlatform({ProcessRunner? processRunner})
-    : _processRunner = processRunner ?? _defaultProcessRunner;
+    : _processRunner = processRunner ?? defaultProcessRunner;
 
   final ProcessRunner _processRunner;
 
@@ -158,7 +136,7 @@ class GitHubPlatform implements GitPlatform {
 class AzureDevOpsPlatform implements GitPlatform {
   /// Constructor accepts an optional process runner for testing.
   AzureDevOpsPlatform({ProcessRunner? processRunner})
-    : _processRunner = processRunner ?? _defaultProcessRunner;
+    : _processRunner = processRunner ?? defaultProcessRunner;
 
   final ProcessRunner _processRunner;
 

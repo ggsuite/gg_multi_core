@@ -42,6 +42,7 @@ void main() {
     List<String> arguments, {
     String? workingDirectory,
     Map<String, String>? environment,
+    bool? runInShell,
   }) async {
     return ProcessResult(0, 0, '', '');
   }
@@ -80,6 +81,7 @@ void main() {
               List<String> arguments, {
               String? workingDirectory,
               Map<String, String>? environment,
+              bool? runInShell,
             }) async {
               deletedBranches.add(
                 '${path.basename(workingDirectory!)}: '
@@ -138,6 +140,7 @@ void main() {
                 List<String> arguments, {
                 String? workingDirectory,
                 Map<String, String>? environment,
+                bool? runInShell,
               }) async {
                 gitCalls.add(arguments.join(' '));
                 return ProcessResult(0, 0, '', '');
@@ -173,6 +176,7 @@ void main() {
               List<String> arguments, {
               String? workingDirectory,
               Map<String, String>? environment,
+              bool? runInShell,
             }) async {
               return ProcessResult(0, 1, '', 'remote ref does not exist');
             },
@@ -204,6 +208,7 @@ void main() {
                 List<String> arguments, {
                 String? workingDirectory,
                 Map<String, String>? environment,
+                bool? runInShell,
               }) async {
                 final repoName = path.basename(workingDirectory!);
                 attempted.add(repoName);
@@ -246,6 +251,7 @@ void main() {
               List<String> arguments, {
               String? workingDirectory,
               Map<String, String>? environment,
+              bool? runInShell,
             }) async {
               gitCalls.add(arguments.join(' '));
               return ProcessResult(0, 0, '', '');
