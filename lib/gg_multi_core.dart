@@ -6,4 +6,21 @@
 
 library;
 
-export 'src/gg_multi_core.dart';
+export 'src/backend/constants.dart';
+export 'src/backend/filesystem_utils.dart';
+export 'src/backend/git_platform.dart' hide ProcessRunner;
+export 'src/backend/git_snapshot.dart';
+export 'src/backend/message_editor_theme.dart';
+export 'src/backend/ocean_migration.dart';
+export 'src/backend/organization.dart';
+export 'src/backend/organization_utils.dart';
+export 'src/backend/publish_skip_check.dart';
+export 'src/backend/repo_folder_resolver.dart';
+export 'src/backend/repository.dart';
+export 'src/backend/ticket_cleanup.dart';
+export 'src/backend/ticket_json.dart';
+export 'src/backend/ticket_state.dart';
+export 'src/backend/trash.dart';
+export 'src/backend/url_parser.dart';
+export 'src/backend/workspace_migration.dart';
+export 'src/backend/workspace_utils.dart';
