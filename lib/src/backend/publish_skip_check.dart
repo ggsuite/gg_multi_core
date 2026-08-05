@@ -16,22 +16,7 @@ import 'package:pub_semver/pub_semver.dart';
 import 'package:pubspec_parse/pubspec_parse.dart';
 
 import 'package:gg_multi_core/src/backend/git_snapshot.dart';
-
-/// Default process runner that uses the system's `Process.run`
-// coverage:ignore-start
-Future<ProcessResult> _defaultProcessRunner(
-  String executable,
-  List<String> arguments, {
-  String? workingDirectory,
-  Map<String, String>? environment,
-}) => Process.run(
-  executable,
-  arguments,
-  workingDirectory: workingDirectory,
-  environment: environment,
-  runInShell: true,
-);
-// coverage:ignore-end
+import 'package:gg_multi_core/src/backend/process_runner.dart';
 
 /// The outcome of [PublishSkipCheck.get] for one ticket repository.
 class PublishSkipDecision {
@@ -68,7 +53,7 @@ class PublishSkipDecision {
 class PublishSkipCheck {
   /// Constructor.
   PublishSkipCheck({ProcessRunner? processRunner})
-    : _processRunner = processRunner ?? _defaultProcessRunner;
+    : _processRunner = processRunner ?? defaultProcessRunner;
 
   /// Runs the git commands used to inspect the repository history.
   final ProcessRunner _processRunner;
