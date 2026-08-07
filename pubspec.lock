@@ -269,10 +269,10 @@ packages:
     dependency: "direct main"
     description:
       name: gg_one
-      sha256: f689dd0e8ffa0266531f65a5bca1ab11c0c12eb26f9d6558ffd06b02c8be07de
+      sha256: "586b3b179c71e5aba1aebfd52fa75d0081916cc5e25d72525faaf0b0d0c0b776"
       url: "https://pub.dev"
     source: hosted
-    version: "12.9.2"
+    version: "12.9.3"
   gg_one_commit:
     dependency: transitive
     description:
@@ -301,10 +301,10 @@ packages:
     dependency: transitive
     description:
       name: gg_one_merge
-      sha256: "6405aaf8d7b566237e4fd141da6b08a8605d6edbac0ab7c6393213deb2e1f1d6"
+      sha256: aeb58c5ebb5eaa3ba70cf4ed0d91dd6e919cf9574b9b952b0da0b84e3f24e977
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.1"
+    version: "1.0.2"
   gg_process:
     dependency: transitive
     description:
