@@ -8,7 +8,6 @@ import 'dart:convert';
 import 'dart:io';
 
 // ignore: lines_longer_than_80_chars
-import 'package:gg_git/gg_git.dart' as git;
 import 'package:gg_local_package_dependencies/gg_local_package_dependencies.dart';
 import 'package:gg_one/gg_one.dart' as gg;
 import 'package:mocktail/mocktail.dart';
@@ -63,11 +62,11 @@ class PublishSkipCheck {
 
   /// Every commit message gg generates itself starts with this prefix.
   @Deprecated('Use ggCommitPrefix from package:gg_git/gg_git.dart')
-  static const String ggCommitPrefix = git.ggCommitPrefix;
+  static const String ggCommitPrefix = gg.ggCommitPrefix;
 
   /// Commit subjects gg versions before the »#gg: « prefix created.
   @Deprecated('Use legacyGgCommitMessages from package:gg_git/gg_git.dart')
-  static const Set<String> legacyGgCommitMessages = git.legacyGgCommitMessages;
+  static const Set<String> legacyGgCommitMessages = gg.legacyGgCommitMessages;
 
   /// The files gg's bookkeeping commits legitimately touch.
   ///
@@ -414,7 +413,7 @@ class PublishSkipCheck {
   ///
   /// One shared predicate with the producers in gg_git, so what gg writes and
   /// what this check accepts cannot drift apart.
-  bool _isGgGenerated(String subject) => git.isGgGenerated(subject);
+  bool _isGgGenerated(String subject) => gg.isGgGenerated(subject);
 
   // ...........................................................................
   /// Returns the first file of commit [hash] that is not one gg's
@@ -477,7 +476,7 @@ class PublishSkipCheck {
   /// `do publish` writes right after a release marks the point up to which
   /// everything is released; only what follows it belongs to this ticket.
   ///
-  /// Matched by the shared [git.ggMergeBackPrefix], so producer and reader
+  /// Matched by the shared [gg.ggMergeBackPrefix], so producer and reader
   /// cannot drift apart.
   Future<String?> _lastMergeBackCommit(Directory repoDir) async {
     final hash = await _runGit(
@@ -488,7 +487,7 @@ class PublishSkipCheck {
         // A fixed string, not a pattern — the prefix carries no regex meta
         // characters today, and --fixed-strings keeps it that way.
         '--fixed-strings',
-        '--grep=${git.ggMergeBackPrefix}',
+        '--grep=${gg.ggMergeBackPrefix}',
         'HEAD',
       ],
       repoDir: repoDir,
