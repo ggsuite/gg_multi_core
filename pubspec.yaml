@@ -11,7 +11,7 @@ dependencies:
   gg_git: ^4.0.0
   gg_local_package_dependencies: ^3.0.0
   gg_log: ^1.0.6
-  gg_one: ^13.1.0
+  gg_one: ^14.0.0
   http: ^1.6.0
   interact: ^2.2.0
   mocktail: ^1.0.5
