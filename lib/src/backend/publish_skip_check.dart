@@ -15,8 +15,7 @@ import 'package:path/path.dart' as path;
 import 'package:pub_semver/pub_semver.dart';
 import 'package:pubspec_parse/pubspec_parse.dart';
 
-import 'package:gg_multi_core/src/backend/git_snapshot.dart';
-import 'package:gg_multi_core/src/backend/process_runner.dart';
+import 'package:gg_git/gg_git.dart';
 
 /// The outcome of [PublishSkipCheck.get] for one ticket repository.
 class PublishSkipDecision {

@@ -12,7 +12,7 @@ import 'package:gg_multi_core/src/backend/url_parser.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:gg_multi_core/src/backend/repository.dart';
-import 'package:gg_multi_core/src/backend/process_runner.dart';
+import 'package:gg_git/gg_git.dart';
 
 /// Interface for Git platforms like GitHub, Azure DevOps, GitLab.
 abstract class GitPlatform {
