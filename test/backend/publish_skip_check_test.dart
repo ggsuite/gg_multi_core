@@ -117,6 +117,25 @@ void main() {
   }
 
   group('PublishSkipCheck', () {
+    group('the deprecated constants', () {
+      test('still expose the flat set of gg owned files', () {
+        // Kept for consumers outside this ticket; the live check uses
+        // gg.isGgOwnedPath, which is strictly more capable.
+        // ignore: deprecated_member_use_from_same_package
+        final files = PublishSkipCheck.ggOwnedFiles;
+        expect(
+          files,
+          containsAll(<String>[
+            'pubspec.yaml',
+            'pubspec.lock',
+            'package.json',
+            'CHANGELOG.md',
+            '.gitignore',
+          ]),
+        );
+      });
+    });
+
     group('get() — manual change detection', () {
       test('publishes when the directory is no git repository', () async {
         final dir = createPlainRepo('a', pubspecContent: 'name: a\n');
@@ -349,37 +368,29 @@ void main() {
         expect(decision.reason, contains('no main branch to compare against'));
       });
 
-      test(
-        'publishes when non-gg commits landed on main since the last tag',
-        () async {
-          // »gg do merge« merges a ticket into main without tagging it. The
-          // scan must reach back to the last tag, otherwise the merged work
-          // looks released and the next run skips the repo.
-          final dir = await createRepo('a');
-          await git(dir, ['tag', '1.0.0']);
-          await commitFile(dir, 'lib.dart', 'void main() {}', 'Fix login bug');
-          await git(dir, ['checkout', '-b', 'feat']);
-          await commitFile(
-            dir,
-            'pubspec_overrides.yaml',
-            'refs',
-            '#gg: changed references to git',
-          );
-
-          final decision = await check.get(
-            repo: node('a', dir),
-            refVersions: {},
-          );
-          expect(decision.skip, isFalse);
-          expect(decision.reason, contains('Fix login bug'));
-        },
-      );
-
-      test('skips when only gg commits happened since the last tag', () async {
+      test('ignores work that is already on the main branch', () async {
+        // Content that sits on main is not a change of *this* ticket — it
+        // is already merged. A »--merge-only« run puts work on main without
+        // tagging it; the next ticket must not be forced to release it.
         final dir = await createRepo('a');
         await commitFile(dir, 'lib.dart', 'void main() {}', 'Fix login bug');
-        // The release tag covers the manual commit — it is published.
-        await git(dir, ['tag', '1.0.0']);
+        await git(dir, ['update-ref', 'refs/remotes/origin/main', 'main']);
+        await git(dir, ['checkout', '-b', 'feat']);
+        await commitFile(
+          dir,
+          'pubspec_overrides.yaml',
+          'refs',
+          '#gg: changed references to git',
+        );
+
+        final decision = await check.get(repo: node('a', dir), refVersions: {});
+        expect(decision.skip, isTrue);
+      });
+
+      test('skips when the feature branch adds only gg commits', () async {
+        final dir = await createRepo('a');
+        await commitFile(dir, 'lib.dart', 'void main() {}', 'Fix login bug');
+        await git(dir, ['update-ref', 'refs/remotes/origin/main', 'main']);
         await git(dir, ['checkout', '-b', 'feat']);
         await commitFile(
           dir,
@@ -393,15 +404,12 @@ void main() {
       });
 
       test(
-        'prefers the last tag over the main branch as compare base',
+        'publishes for a manual commit unique to the feature branch',
         () async {
-          // The manual commit sits on main *before* the feature branch, so a
-          // main-based comparison would not see it. The tag predates it.
           final dir = await createRepo('a');
-          await git(dir, ['tag', '1.0.0']);
-          await commitFile(dir, 'lib.dart', 'void main() {}', 'Manual work');
           await git(dir, ['update-ref', 'refs/remotes/origin/main', 'main']);
           await git(dir, ['checkout', '-b', 'feat']);
+          await commitFile(dir, 'lib.dart', 'void main() {}', 'Manual work');
 
           final decision = await check.get(
             repo: node('a', dir),
@@ -412,24 +420,54 @@ void main() {
         },
       );
 
-      test('ignores tags that are not reachable from HEAD', () async {
-        // A tag on an unrelated branch says nothing about this branch's
-        // release state — the main branch stays the base then.
+      test(
+        'the merge-back commit hides the commits of an earlier release',
+        () async {
+          // gg squash-merges the feature branch into main, so the original
+          // feature commits never become ancestors of main. Without the
+          // anchor they would stay in the range forever and a ticket that was
+          // published once would look changed on every later run.
+          final dir = await createRepo('a');
+          await git(dir, ['update-ref', 'refs/remotes/origin/main', 'main']);
+          await git(dir, ['checkout', '-b', 'feat']);
+          await commitFile(dir, 'lib.dart', 'void main() {}', 'Released work');
+          await commitFile(
+            dir,
+            'merge-back.txt',
+            'x',
+            '#gg: merge the published main back into feat',
+          );
+          await commitFile(
+            dir,
+            'pubspec_overrides.yaml',
+            'refs',
+            '#gg: restored local workspace references',
+          );
+
+          final decision = await check.get(
+            repo: node('a', dir),
+            refVersions: {},
+          );
+          expect(decision.skip, isTrue);
+        },
+      );
+
+      test('a manual commit after the merge-back still publishes', () async {
         final dir = await createRepo('a');
-        await git(dir, ['checkout', '-b', 'other']);
-        await commitFile(dir, 'other.txt', 'x', 'Other work');
-        await git(dir, ['tag', '9.9.9']);
-        await git(dir, ['checkout', 'main']);
+        await git(dir, ['update-ref', 'refs/remotes/origin/main', 'main']);
         await git(dir, ['checkout', '-b', 'feat']);
+        await commitFile(dir, 'a.dart', 'void main() {}', 'Released work');
         await commitFile(
           dir,
-          'pubspec_overrides.yaml',
-          'refs',
-          '#gg: changed references to git',
+          'merge-back.txt',
+          'x',
+          '#gg: merge the published main back into feat',
         );
+        await commitFile(dir, 'b.dart', 'void main() {}', 'New work');
 
         final decision = await check.get(repo: node('a', dir), refVersions: {});
-        expect(decision.skip, isTrue);
+        expect(decision.skip, isFalse);
+        expect(decision.reason, contains('New work'));
       });
 
       test('reports uncommitted changes via an injected runner', () async {
