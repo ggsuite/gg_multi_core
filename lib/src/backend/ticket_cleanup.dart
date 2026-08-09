@@ -11,7 +11,7 @@ import 'package:gg_log/gg_log.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:gg_multi_core/src/backend/trash.dart';
-import 'package:gg_multi_core/src/backend/process_runner.dart';
+import 'package:gg_git/gg_git.dart';
 
 /// Closes a finished ticket: deletes the remote feature branches, then
 /// moves the **whole** ticket folder into `<root>/.trash/<ticket>`.
