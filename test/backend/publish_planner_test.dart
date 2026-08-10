@@ -11,6 +11,7 @@ import 'dart:io';
 import 'package:gg_local_package_dependencies/gg_local_package_dependencies.dart';
 import 'package:gg_multi_core/src/backend/message_editor_theme.dart';
 import 'package:gg_multi_core/src/backend/publish_planner.dart';
+import 'package:gg_multi_core/src/backend/ticket_json.dart';
 import 'package:gg_multi_core/src/backend/publish_skip_check.dart';
 import 'package:gg_one/gg_one.dart' as gg;
 import 'package:gg_publish/gg_publish.dart' show PublishedVersion;
@@ -219,7 +220,7 @@ void main() {
   group('seedMessageFor', () {
     test('prefers an explicit message over the ticket description', () {
       File(
-        path.join(ticketDir.path, '.ticket'),
+        path.join(ticketDir.path, ticketJsonFileName),
       ).writeAsStringSync('{"description": "Ticket desc"}');
       expect(
         PublishPlanner.seedMessageFor(
@@ -232,7 +233,7 @@ void main() {
 
     test('falls back to the ticket description', () {
       File(
-        path.join(ticketDir.path, '.ticket'),
+        path.join(ticketDir.path, ticketJsonFileName),
       ).writeAsStringSync('{"description": "Ticket desc"}');
       expect(
         PublishPlanner.seedMessageFor(
@@ -715,7 +716,7 @@ void main() {
   group('an unreadable ticket description', () {
     test('does not crash the seed', () {
       File(
-        path.join(ticketDir.path, '.ticket'),
+        path.join(ticketDir.path, ticketJsonFileName),
       ).writeAsStringSync(jsonEncode(<String>[]));
       expect(PublishPlanner.seedMessageFor(ticketDir: ticketDir), '');
     });
