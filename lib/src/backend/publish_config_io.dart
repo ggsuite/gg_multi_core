@@ -135,3 +135,20 @@ bool anyRepoHasStatus({
       ).state.status !=
       null,
 );
+
+// .............................................................................
+/// Whether any repository of the ticket has publish answers recorded.
+///
+/// `gg do review` writes them, so this is true for every ticket that went
+/// through a review — the state a `gg do publish --continue` may legitimately
+/// find after a run that failed before it touched a single repository.
+bool anyRepoHasAnswers({
+  required Iterable<Directory> repoDirs,
+  required Directory ticketDir,
+}) => repoDirs.any((repoDir) {
+  final config = loadTicketRepoPublishFiles(
+    repoDir: repoDir,
+    ticketDir: ticketDir,
+  ).config;
+  return config.mergeMessage != null || config.versionIncrement != null;
+});

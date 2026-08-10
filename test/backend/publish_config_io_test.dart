@@ -212,6 +212,47 @@ void main() {
     });
   });
 
+  group('anyRepoHasAnswers()', () {
+    test('is false when no repo recorded an answer', () {
+      expect(
+        anyRepoHasAnswers(
+          repoDirs: [repoDir('A'), repoDir('B')],
+          ticketDir: ticketDir,
+        ),
+        isFalse,
+      );
+    });
+
+    test('is true for a recorded merge message', () async {
+      final b = repoDir('B');
+      await gg.RepoPublishConfig(
+        mergeMessage: 'answered',
+      ).save(file: gg.repoPublishConfigFile(b));
+
+      expect(
+        anyRepoHasAnswers(repoDirs: [repoDir('A'), b], ticketDir: ticketDir),
+        isTrue,
+      );
+    });
+
+    test('is true for a recorded increment alone', () async {
+      final a = repoDir('A');
+      await gg.RepoPublishConfig(
+        versionIncrement: VersionIncrement.minor,
+      ).save(file: gg.repoPublishConfigFile(a));
+
+      expect(anyRepoHasAnswers(repoDirs: [a], ticketDir: ticketDir), isTrue);
+    });
+
+    test('sees the answers of a legacy ticket-level config', () {
+      writeTicketLegacy('{"merge_message":"legacy"}');
+      expect(
+        anyRepoHasAnswers(repoDirs: [repoDir('A')], ticketDir: ticketDir),
+        isTrue,
+      );
+    });
+  });
+
   group('anyRepoHasStatus()', () {
     test('is false when no repo carries a status', () {
       expect(
