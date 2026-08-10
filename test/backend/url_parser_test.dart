@@ -298,6 +298,31 @@ void main() {
         expect(result.repo, isNull);
       });
 
+      test('parses GitHub /orgs/<org>/<repo> as that one repository', () {
+        // Pasting an org page and appending a repo name must add the repo,
+        // not clone the whole organization.
+        const url = 'https://github.com/orgs/ggsuite/gg_dna';
+        final result = parser.parseHttp(url);
+        expect(result.platformType, 'github');
+        expect(result.org, 'ggsuite');
+        expect(result.repo, 'gg_dna');
+      });
+
+      test('strips a .git suffix from an /orgs/<org>/<repo> url', () {
+        final result = parser.parseHttp(
+          'https://github.com/orgs/ggsuite/gg_dna.git',
+        );
+        expect(result.repo, 'gg_dna');
+      });
+
+      test('keeps GitHub own org tabs repo-less', () {
+        for (final tab in ['repositories', 'people', 'Teams', 'settings']) {
+          final result = parser.parseHttp('https://github.com/orgs/myorg/$tab');
+          expect(result.org, 'myorg', reason: tab);
+          expect(result.repo, isNull, reason: tab);
+        }
+      });
+
       test('parses bare GitHub /orgs path as github without org or repo', () {
         const url = 'https://github.com/orgs';
         final result = parser.parseHttp(url);
