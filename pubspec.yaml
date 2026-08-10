@@ -15,7 +15,6 @@ dependencies:
   gg_one: ^14.1.3
   gg_publish: ^4.3.1
   http: ^1.6.0
-  interact: ^2.2.0
   mocktail: ^1.0.5
   path: ^1.9.1
   pub_semver: ^2.2.0
