@@ -455,6 +455,86 @@ void main() {
         });
       });
 
+      group('ticketDestination', () {
+        test('is the flat folder of an empty ticket', () {
+          expect(
+            RepoFolderResolver.ticketDestination(
+              ticketPath: workspace.path,
+              repoUrl: 'https://github.com/ggsuite/gg_foo.git',
+              repoName: 'gg_foo',
+            ),
+            path.join(workspace.path, 'gg_foo'),
+          );
+        });
+
+        test('is the folder a repo of that remote already occupies', () {
+          // Placed in an organization folder by an older gg — adding it
+          // again must not create a second copy beside it.
+          final existing = makeRepo(
+            path.join('ggsuite', 'gg_foo'),
+            pubspecName: 'gg_foo',
+            remoteUrl: 'git@github.com:ggsuite/gg_foo.git',
+          );
+
+          expect(
+            RepoFolderResolver.ticketDestination(
+              ticketPath: workspace.path,
+              repoUrl: 'https://github.com/ggsuite/gg_foo.git',
+              repoName: 'gg_foo',
+            ),
+            existing.path,
+          );
+        });
+
+        test('is the org folder when the flat name is taken', () {
+          makeRepo(
+            'gg_foo',
+            pubspecName: 'gg_foo',
+            remoteUrl: 'https://github.com/ggsuite/gg_foo.git',
+          );
+
+          expect(
+            RepoFolderResolver.ticketDestination(
+              ticketPath: workspace.path,
+              repoUrl: 'https://github.com/other/gg_foo.git',
+              repoName: 'gg_foo',
+            ),
+            path.join(workspace.path, 'other', 'gg_foo'),
+          );
+        });
+
+        test('is the flat folder when it holds no repository', () {
+          // An empty folder of that name is no collision.
+          Directory(path.join(workspace.path, 'gg_foo')).createSync();
+
+          expect(
+            RepoFolderResolver.ticketDestination(
+              ticketPath: workspace.path,
+              repoUrl: 'https://github.com/other/gg_foo.git',
+              repoName: 'gg_foo',
+            ),
+            path.join(workspace.path, 'gg_foo'),
+          );
+        });
+
+        test('is the flat folder when the url names no organization', () {
+          makeRepo(
+            'gg_foo',
+            pubspecName: 'gg_foo',
+            remoteUrl: 'https://github.com/ggsuite/gg_foo.git',
+          );
+
+          expect(
+            RepoFolderResolver.ticketDestination(
+              ticketPath: workspace.path,
+              repoUrl: 'https://example.com/gg_foo.git',
+              repoName: 'gg_foo',
+            ),
+            path.join(workspace.path, 'gg_foo'),
+          );
+        });
+      });
+
       test('relativePath is the location within the workspace', () {
         final nested = makeOrgRepo('ggsuite', 'gg_foo');
         final flat = makeRepo('gg_flat', pubspecName: 'gg_flat');

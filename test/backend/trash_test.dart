@@ -19,7 +19,8 @@ void main() {
 
   setUp(() {
     root = Directory.systemTemp.createTempSync('trash_test_');
-    ticketDir = Directory(path.join(root.path, 'tickets', 'T1'))
+    // A ticket sits directly in the workspace root.
+    ticketDir = Directory(path.join(root.path, 'T1'))
       ..createSync(recursive: true);
   });
 
@@ -43,6 +44,15 @@ void main() {
       expect(
         Trash.dirForTicket(ticketDir).path,
         path.join(root.path, '.trash', 'T1'),
+      );
+    });
+
+    test('dirForTicket looks past a legacy tickets folder', () {
+      final legacy = Directory(path.join(root.path, 'tickets', 'T2'))
+        ..createSync(recursive: true);
+      expect(
+        Trash.dirForTicket(legacy).path,
+        path.join(root.path, '.trash', 'T2'),
       );
     });
 

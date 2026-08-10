@@ -217,4 +217,79 @@ void main() {
       );
     });
   });
+
+  group('migrateTicketToFlatFolders', () {
+    test('is a no-op for a ticket that is already flat', () {
+      makeRepo('gg_foo', remoteUrl: 'https://github.com/ggsuite/gg_foo.git');
+
+      expect(
+        migrateTicketToFlatFolders(ticketPath: workspace.path, ggLog: ggLog),
+        isEmpty,
+      );
+      expect(logs, isEmpty);
+    });
+
+    test('moves the repos up and drops the empty org folders', () {
+      makeRepo(
+        path.join('ggsuite', 'gg_foo'),
+        remoteUrl: 'https://github.com/ggsuite/gg_foo.git',
+      );
+      makeRepo(
+        path.join('tssuite', 'ts_foo'),
+        remoteUrl: 'https://github.com/tssuite/ts_foo.git',
+      );
+
+      final moved = migrateTicketToFlatFolders(
+        ticketPath: workspace.path,
+        ggLog: ggLog,
+      );
+
+      expect(moved, <String>['gg_foo', 'ts_foo']);
+      expect(exists('gg_foo'), isTrue);
+      expect(exists('ts_foo'), isTrue);
+      expect(exists('ggsuite'), isFalse);
+      expect(exists('tssuite'), isFalse);
+      expect(logs, contains('✓ gg_foo'));
+    });
+
+    test('keeps a repo whose name is taken in the ticket', () {
+      // Two organizations own a `gg_foo` — the case org folders exist for.
+      makeRepo('gg_foo', remoteUrl: 'https://github.com/ggsuite/gg_foo.git');
+      makeRepo(
+        path.join('other', 'gg_foo'),
+        remoteUrl: 'https://github.com/other/gg_foo.git',
+      );
+
+      final moved = migrateTicketToFlatFolders(
+        ticketPath: workspace.path,
+        ggLog: ggLog,
+      );
+
+      expect(moved, isEmpty);
+      expect(exists(path.join('other', 'gg_foo')), isTrue);
+      expect(logs, anyElement(startsWith('Cannot move gg_foo out of other:')));
+    });
+
+    test('reports a repo that cannot be moved', () {
+      makeRepo(
+        path.join('ggsuite', 'gg_foo'),
+        remoteUrl: 'https://github.com/ggsuite/gg_foo.git',
+      );
+      // A file blocks the flat target without being a repository, so the
+      // move itself fails.
+      File(path.join(workspace.path, 'gg_foo')).writeAsStringSync('');
+
+      final moved = migrateTicketToFlatFolders(
+        ticketPath: workspace.path,
+        ggLog: ggLog,
+      );
+
+      expect(moved, isEmpty);
+      expect(exists(path.join('ggsuite', 'gg_foo')), isTrue);
+      expect(
+        logs,
+        anyElement(startsWith('Failed to move gg_foo out of its org folder:')),
+      );
+    });
+  });
 }
