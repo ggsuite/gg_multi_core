@@ -59,6 +59,26 @@ class UrlParser {
   /// The host of the Azure DevOps git endpoint.
   static const String _azureSshHost = 'ssh.dev.azure.com';
 
+  /// The pages GitHub serves under `/orgs/<org>/…`. None of them is a
+  /// repository, so a URL ending in one names the organization alone.
+  static const Set<String> _githubOrgTabs = {
+    'audit-log',
+    'billing',
+    'dashboard',
+    'discussions',
+    'insights',
+    'invitations',
+    'members',
+    'packages',
+    'people',
+    'projects',
+    'repositories',
+    'security',
+    'settings',
+    'sso',
+    'teams',
+  };
+
   /// Internal helper to parse Azure URLs. Not intended for external use.
   ///
   /// Handles `git@ssh.dev.azure.com:v3/<org>/<project>/<repo>` and the
@@ -173,14 +193,24 @@ class UrlParser {
       return _parseAzureHttp(uri, segments);
     }
     if (segments.isEmpty) return ParseResult(platformType: platform);
-    // GitHub organization landing URL: `github.com/orgs/<org>` points at an
+    // GitHub organization URL: `github.com/orgs/<org>` points at an
     // organization, not a repository (`orgs` is a reserved GitHub path and
     // can never be an account name). Report it as an org without a repo so
     // callers treat it like the bare `github.com/<org>` form.
+    //
+    // A third segment is the repository — `github.com/orgs/<org>/<repo>` is
+    // the form users produce by pasting an org page and appending a repo, and
+    // reading it as the bare org would clone the whole organization. Only
+    // GitHub's own org tabs (`/orgs/<org>/repositories`, `/people`, …) keep
+    // naming no repository.
     if (platform == 'github' && segments[0] == 'orgs') {
+      final org = segments.length > 1 ? segments[1] : null;
+      final third = segments.length > 2 ? segments[2] : null;
       return ParseResult(
-        org: segments.length > 1 ? segments[1] : null,
-        repo: null,
+        org: org,
+        repo: third == null || _githubOrgTabs.contains(third.toLowerCase())
+            ? null
+            : _withoutGitSuffix(third),
         platformType: platform,
       );
     }
