@@ -10,11 +10,13 @@ import 'dart:io';
 // ignore: lines_longer_than_80_chars
 import 'package:gg_local_package_dependencies/gg_local_package_dependencies.dart';
 import 'package:gg_multi_core/src/backend/message_editor_theme.dart';
+import 'package:gg_multi_core/src/backend/publish_config_io.dart';
 import 'package:gg_multi_core/src/backend/publish_planner.dart';
 import 'package:gg_multi_core/src/backend/ticket_json.dart';
 import 'package:gg_multi_core/src/backend/publish_skip_check.dart';
 import 'package:gg_one/gg_one.dart' as gg;
-import 'package:gg_publish/gg_publish.dart' show PublishedVersion;
+import 'package:gg_publish/gg_publish.dart'
+    show PublishedVersion, VersionIncrement;
 import 'package:gg_status_printer/gg_status_printer.dart';
 import 'package:gg_lang/gg_lang.dart' as gg_lang;
 import 'package:mocktail/mocktail.dart';
@@ -37,13 +39,16 @@ class _StubAdapter implements gg.InteractAdapter {
   final List<int> _indices;
   int _call = 0;
   final List<List<String>> capturedOptions = [];
+  final List<int> capturedInitialIndices = [];
 
   @override
   Future<int> choose({
     required String message,
     required List<String> options,
+    int initialIndex = 0,
   }) async {
     capturedOptions.add(options);
+    capturedInitialIndices.add(initialIndex);
     final index = _indices[_call % _indices.length];
     _call++;
     return index;
@@ -161,10 +166,10 @@ void main() {
   }
 
   // ###########################################################################
-  group('publishConfigFileFor', () {
+  group('legacyTicketPublishConfigFile', () {
     test('points at <ticket>/.gg/gg-publish.json', () {
       expect(
-        publishConfigFileFor(ticketDir).path,
+        legacyTicketPublishConfigFile(ticketDir).path,
         path.join(ticketDir.path, '.gg', 'gg-publish.json'),
       );
     });
@@ -178,23 +183,23 @@ void main() {
 
     test('is false for a config file without done steps', () {
       final dir = repoDir('A');
-      gg.DoConfigurePublish.configFileFor(dir)
+      gg.repoPublishConfigFile(dir)
         ..createSync(recursive: true)
-        ..writeAsStringSync('{"version_increment": "patch"}');
+        ..writeAsStringSync('{"publishConfig":{"versionIncrement":"patch"}}');
       expect(repoHasPublishStepProgress(dir), isFalse);
     });
 
     test('is true once a step was recorded', () {
       final dir = repoDir('A');
-      gg.DoConfigurePublish.configFileFor(dir)
+      gg.publishStateFile(dir)
         ..createSync(recursive: true)
-        ..writeAsStringSync('{"done_steps": ["merge"]}');
+        ..writeAsStringSync('{"doneSteps": ["merge"]}');
       expect(repoHasPublishStepProgress(dir), isTrue);
     });
 
     test('is false for an unreadable file — it cannot prove progress', () {
       final dir = repoDir('A');
-      gg.DoConfigurePublish.configFileFor(dir)
+      gg.publishStateFile(dir)
         ..createSync(recursive: true)
         ..writeAsStringSync('{ not json');
       expect(repoHasPublishStepProgress(dir), isFalse);
@@ -260,8 +265,8 @@ void main() {
         seedMessage: 'Seed',
       );
 
-      expect(answer.override.versionIncrement, 'minor');
-      expect(answer.override.mergeMessage, 'Seed');
+      expect(answer.config.versionIncrement, VersionIncrement.minor);
+      expect(answer.config.mergeMessage, 'Seed');
       expect(answer.baseline, Version(2, 5, 0));
       // The preview is calculated from the published version.
       expect(adapter.capturedOptions.single.first, contains('2.5.0 -> 2.5.1'));
@@ -277,8 +282,8 @@ void main() {
         mergeOnly: true,
       );
 
-      expect(answer.override.versionIncrement, isNull);
-      expect(answer.override.mergeMessage, 'Seed');
+      expect(answer.config.versionIncrement, isNull);
+      expect(answer.config.mergeMessage, 'Seed');
     });
 
     test('falls back to the seed when the edit is cleared', () async {
@@ -287,7 +292,7 @@ void main() {
         repoDir: repoDir('A'),
         seedMessage: 'Seed',
       );
-      expect(answer.override.mergeMessage, 'Seed');
+      expect(answer.config.mergeMessage, 'Seed');
     });
 
     test('falls back to »Publish <repo>« when nothing seeds it', () async {
@@ -296,7 +301,7 @@ void main() {
         repoDir: repoDir('A'),
         seedMessage: '',
       );
-      expect(answer.override.mergeMessage, 'Publish A');
+      expect(answer.config.mergeMessage, 'Publish A');
     });
 
     test('assumes 0.0.0 and warns when the baseline cannot be read', () async {
@@ -362,7 +367,7 @@ void main() {
     test('answers which repos publish', () {
       final plan = PublishPlan(
         entries: [entry('A', publishes: true), entry('B', publishes: false)],
-        config: gg.PublishConfig(),
+        configs: const {},
       );
 
       expect(plan.publishes, {'A'});
@@ -374,7 +379,7 @@ void main() {
     test('anyPublishes is false when every repo is skipped', () {
       final plan = PublishPlan(
         entries: [entry('A', publishes: false)],
-        config: gg.PublishConfig(),
+        configs: const {},
       );
       expect(plan.anyPublishes, isFalse);
       expect(plan.publishes, isEmpty);
@@ -396,9 +401,10 @@ void main() {
 
       expect(plan.publishes, {'A'});
       expect(seeds, ['The change']);
-      expect(plan.config.repos['A']!.versionIncrement, 'major');
-      expect(plan.config.repos['A']!.mergeMessage, 'The change');
-      expect(plan.config.repos, isNot(contains('B')));
+      expect(plan.configs['A']!.versionIncrement, VersionIncrement.major);
+      expect(plan.configs['A']!.mergeMessage, 'The change');
+      // B was skipped, so nothing was asked and nothing recorded for it.
+      expect(plan.configs['B']!.mergeMessage, isNull);
 
       // Both verdicts are reported per repo.
       expect(
@@ -423,9 +429,9 @@ void main() {
 
     test('never skips a repo that already started publishing', () async {
       final dir = repoDir('A');
-      gg.DoConfigurePublish.configFileFor(dir)
+      gg.publishStateFile(dir)
         ..createSync(recursive: true)
-        ..writeAsStringSync('{"done_steps": ["prepare_version"]}');
+        ..writeAsStringSync('{"doneSteps": ["prepare_version"]}');
       final planner = makePlanner(skipped: {'A'});
 
       final plan = await planner.plan(
@@ -443,15 +449,14 @@ void main() {
 
     test('treats a repo the resume marks published as done', () async {
       final planner = makePlanner(increments: const []);
-      final config = gg.PublishConfig(
-        repos: {'A': gg.RepoOverride(status: 'published')},
-      );
+      await gg.PublishState(
+        status: 'published',
+      ).save(file: gg.publishStateFile(repoDir('A')));
 
       final plan = await planner.plan(
         ticketDir: ticketDir,
         subs: [node('A')],
         ggLog: ggLog,
-        config: config,
         continueRun: true,
       );
 
@@ -461,60 +466,114 @@ void main() {
       expect(messages.join('\n'), isNot(contains('Not published')));
     });
 
-    test('asks nothing the configuration already answers', () async {
-      final planner = makePlanner(increments: const []);
-      final config = gg.PublishConfig(
-        versionIncrement: 'minor',
+    test('asks again, with the recorded answers pre-selected', () async {
+      // The heart of the reconfigure requirement: an answer on disk is a
+      // default, never a reason to skip the question.
+      final adapter = _StubAdapter([1]);
+      final planner = makePlanner(adapter: adapter);
+      await gg.RepoPublishConfig(
+        versionIncrement: VersionIncrement.minor,
         mergeMessage: 'from the config',
-      );
+      ).save(file: gg.repoPublishConfigFile(repoDir('A')));
 
       final plan = await planner.plan(
         ticketDir: ticketDir,
         subs: [node('A')],
         ggLog: ggLog,
-        config: config,
       );
 
-      expect(seeds, isEmpty);
+      expect(adapter.capturedInitialIndices, [1]);
+      expect(seeds, ['from the config']);
       expect(plan.entryFor('A')!.versionIncrement, 'minor');
       expect(plan.entryFor('A')!.mergeMessage, 'from the config');
-      // The top-level defaults survive the merge.
-      expect(plan.config.versionIncrement, 'minor');
-      expect(plan.config.mergeMessage, 'from the config');
     });
 
-    test('a merge-only run needs no increment to be covered', () async {
-      final planner = makePlanner(increments: const []);
-      final config = gg.PublishConfig(mergeMessage: 'just merge');
+    test('a recorded answer keeps a headless merge-only run going', () async {
+      final planner = makePlanner(hasTerminal: false, increments: const []);
+      await gg.RepoPublishConfig(
+        mergeMessage: 'just merge',
+      ).save(file: gg.repoPublishConfigFile(repoDir('A')));
 
-      await planner.plan(
+      final plan = await planner.plan(
         ticketDir: ticketDir,
         subs: [node('A')],
         ggLog: ggLog,
-        config: config,
         mergeOnly: true,
       );
 
       expect(seeds, isEmpty);
+      expect(plan.entryFor('A')!.mergeMessage, 'just merge');
     });
 
-    test('keeps the status and channel a resume depends on', () async {
-      final planner = makePlanner();
-      final config = gg.PublishConfig(
-        channel: 'stable',
-        repos: {'A': gg.RepoOverride(channel: 'rc', status: 'failed')},
-      );
+    test('a headless run uses a fully answered config as it is', () async {
+      final planner = makePlanner(hasTerminal: false, increments: const []);
+      await gg.RepoPublishConfig(
+        versionIncrement: VersionIncrement.major,
+        mergeMessage: 'from the config',
+      ).save(file: gg.repoPublishConfigFile(repoDir('A')));
 
       final plan = await planner.plan(
         ticketDir: ticketDir,
         subs: [node('A')],
         ggLog: ggLog,
-        config: config,
       );
 
-      expect(plan.config.repos['A']!.status, 'failed');
-      expect(plan.config.repos['A']!.channel, 'rc');
-      expect(plan.config.repos['A']!.versionIncrement, 'patch');
+      expect(seeds, isEmpty);
+      expect(plan.entryFor('A')!.versionIncrement, 'major');
+    });
+
+    test('carries the recorded commits into the pull-request body', () async {
+      final planner = makePlanner();
+      await gg.RepoPublishConfig(
+        commits: [
+          gg.CommitMessage(firstLine: 'Add tracking', details: ['d']),
+        ],
+      ).save(file: gg.repoPublishConfigFile(repoDir('A')));
+
+      final plan = await planner.plan(
+        ticketDir: ticketDir,
+        subs: [node('A')],
+        ggLog: ggLog,
+      );
+
+      expect(plan.entryFor('A')!.pullRequestBody, '- Add tracking\n  - d');
+      // The answers the questions do not touch survive them.
+      expect(plan.configs['A']!.commits.single.firstLine, 'Add tracking');
+    });
+
+    test('reads the answers of a legacy ticket-level config', () async {
+      final planner = makePlanner(increments: const [], hasTerminal: false);
+      legacyTicketPublishConfigFile(ticketDir)
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          '{"version_increment":"minor","merge_message":"legacy"}',
+        );
+
+      final plan = await planner.plan(
+        ticketDir: ticketDir,
+        subs: [node('A')],
+        ggLog: ggLog,
+      );
+
+      expect(seeds, isEmpty);
+      expect(plan.entryFor('A')!.versionIncrement, 'minor');
+      expect(plan.entryFor('A')!.mergeMessage, 'legacy');
+    });
+
+    test('save() writes one publish_config.json per repo', () async {
+      final planner = makePlanner(increments: [0]);
+
+      final plan = await planner.plan(
+        ticketDir: ticketDir,
+        subs: [node('A')],
+        ggLog: ggLog,
+        defaultMergeMessage: 'The change',
+      );
+      await plan.save();
+
+      final reloaded = gg.RepoPublishConfig.tryLoad(repoDir('A'))!;
+      expect(reloaded.mergeMessage, 'The change');
+      expect(reloaded.versionIncrement, VersionIncrement.patch);
     });
 
     test('ask: false decides without asking anything', () async {
@@ -581,7 +640,7 @@ void main() {
         String baseline = '1.2.3',
         bool baselineThrows = false,
         ReadManifestVersion? readManifestVersion,
-        gg.PublishConfig? config,
+        String? channel,
         bool mergeOnly = false,
       }) async {
         final captured = <Map<String, String>>[];
@@ -603,6 +662,12 @@ void main() {
               : const PublishSkipDecision(skip: false, reason: 'changed');
         });
 
+        if (channel != null) {
+          await gg.PublishState(
+            channel: channel,
+          ).save(file: gg.publishStateFile(repoDir('A')));
+        }
+
         await makePlanner(
           check: check,
           increments: increments,
@@ -613,7 +678,6 @@ void main() {
           ticketDir: ticketDir,
           subs: [node('A'), node('B')],
           ggLog: ggLog,
-          config: config,
           mergeOnly: mergeOnly,
         );
         return captured.last;
@@ -646,9 +710,7 @@ void main() {
 
       test('is unknown for a release candidate', () async {
         manifestOfA('0.0.1');
-        final refVersions = await refVersionsOfB(
-          config: gg.PublishConfig(channel: 'rc'),
-        );
+        final refVersions = await refVersionsOfB(channel: 'rc');
         expect(refVersions, isNot(contains('a')));
       });
 
