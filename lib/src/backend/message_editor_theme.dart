@@ -33,7 +33,7 @@ Future<String?> editMessage(
   required String hint,
 }) async {
   gg.throwWhenNotATerminal(subject, hint);
-  return gg.GgPrompts.current.input(
+  return await gg.GgPrompts.current.input(
     prompt: prompt,
     initialText: initialMessage,
     asMessageEditor: true,
