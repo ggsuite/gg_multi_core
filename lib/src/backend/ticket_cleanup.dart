@@ -21,7 +21,7 @@ import 'package:gg_git/gg_git.dart';
 /// ticket later). Nothing is deleted outright — the ticket moves to the
 /// trash **as it is**, in one piece: repositories on their feature branches
 /// with restored overrides and uncommitted leftovers, `ticket.json`,
-/// `.ticket`, `.gg/`, the `<ticket>.code-workspace` file. Reopening — or
+/// `.gg/`, the `<ticket>.code-workspace` file. Reopening — or
 /// even re-importing (`gg do import ticket <path>`) — the closed ticket
 /// from the trash therefore stays possible.
 ///

@@ -62,7 +62,6 @@ void main() {
       File(
         path.join(ticketDir.path, 'ticket.json'),
       ).writeAsStringSync('{"issue_id":"T1"}');
-      File(path.join(ticketDir.path, '.ticket')).writeAsStringSync('{}');
       Directory(path.join(ticketDir.path, '.gg')).createSync();
       File(
         path.join(ticketDir.path, '.gg', '.gg.json'),
@@ -106,7 +105,6 @@ void main() {
       expect(Directory(path.join(trash, 'ggsuite', 'b')).existsSync(), isTrue);
       expect(File(path.join(trash, 'T1.code-workspace')).existsSync(), isTrue);
       expect(File(path.join(trash, 'ticket.json')).existsSync(), isTrue);
-      expect(File(path.join(trash, '.ticket')).existsSync(), isTrue);
       expect(File(path.join(trash, '.gg', '.gg.json')).existsSync(), isTrue);
 
       // One quiet line says where the work now lives — the trash folder,

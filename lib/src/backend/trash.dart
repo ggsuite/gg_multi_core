@@ -60,7 +60,7 @@ class Trash {
   }
 
   /// Moves the **whole** ticket folder [ticketDir] into the trash as one
-  /// unit — repositories, `ticket.json`, `.ticket`, `.gg/`, the
+  /// unit — repositories, `ticket.json`, `.gg/`, the
   /// `.code-workspace` file, everything — and returns the directory it was
   /// moved to (normally `<root>/.trash/<ticket>`).
   ///

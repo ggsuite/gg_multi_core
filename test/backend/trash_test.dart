@@ -264,9 +264,6 @@ void main() {
           path.join(ticketDir.path, 'ticket.json'),
         ).writeAsStringSync('{"issue_id":"T1"}');
         File(
-          path.join(ticketDir.path, '.ticket'),
-        ).writeAsStringSync('{"issue_id":"T1"}');
-        File(
           path.join(ticketDir.path, 'T1.code-workspace'),
         ).writeAsStringSync('{}');
         Directory(path.join(ticketDir.path, '.gg')).createSync();
@@ -287,7 +284,6 @@ void main() {
           File(path.join(target.path, 'ticket.json')).existsSync(),
           isTrue,
         );
-        expect(File(path.join(target.path, '.ticket')).existsSync(), isTrue);
         expect(
           File(path.join(target.path, 'T1.code-workspace')).existsSync(),
           isTrue,

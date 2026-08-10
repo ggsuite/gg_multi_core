@@ -150,9 +150,9 @@ class TicketJson {
 
 /// Builds a [TicketJson] for the ticket at [ticketDir] from [repoDirs].
 ///
-/// `issue_id` is the ticket folder name, `description` is read from the root
-/// `.ticket` file, and each repository contributes its folder name and origin
-/// remote URL.
+/// `issue_id` is the ticket folder name, `description` is carried over from the
+/// `ticket.json` written when the ticket was created, and each repository
+/// contributes its folder name and origin remote URL.
 TicketJson buildTicketJson({
   required Directory ticketDir,
   required Iterable<Directory> repoDirs,
@@ -206,31 +206,20 @@ TicketJson? readTicketJson(Directory ticketDir) {
   }
 }
 
-/// Writes the root `.ticket` file (issue id + description) into [ticketDir].
-void writeRootTicket(
-  Directory ticketDir, {
-  required String issueId,
-  required String description,
-}) {
-  final data = <String, String>{
-    'issue_id': issueId,
-    'description': description,
-  };
-  File(
-    path.join(ticketDir.path, '.ticket'),
-  ).writeAsStringSync(jsonEncode(data));
-}
-
-/// Reads the trimmed `description` from the root `.ticket` file of [ticketDir],
-/// or returns `null` when the file is missing, is not a JSON object, is
-/// malformed, or carries an empty description.
+/// Reads the trimmed `description` from `<ticketDir>/ticket.json`, or returns
+/// `null` when the file is missing, is not a JSON object, is malformed, or
+/// carries an empty description.
 ///
 /// The description is the human-written summary of the ticket and therefore
 /// the natural default for the messages gg writes on the user's behalf: the
 /// commit message of `do commit` and the merge messages of
 /// `do configure-publish`.
+///
+/// The raw JSON is read instead of [readTicketJson] on purpose: a description
+/// is a convenience default, so neither a malformed file nor a version stamp
+/// from a newer gg may make the caller fail.
 String? readTicketDescription(Directory ticketDir) {
-  final file = File(path.join(ticketDir.path, '.ticket'));
+  final file = File(path.join(ticketDir.path, ticketJsonFileName));
   if (!file.existsSync()) {
     return null;
   }
@@ -239,7 +228,7 @@ String? readTicketDescription(Directory ticketDir) {
   try {
     decoded = jsonDecode(file.readAsStringSync());
   } catch (_) {
-    // A hand-edited / truncated .ticket must not crash the caller.
+    // A hand-edited / truncated ticket.json must not crash the caller.
     return null;
   }
   if (decoded is! Map<String, dynamic>) {
