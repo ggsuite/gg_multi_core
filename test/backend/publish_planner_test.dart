@@ -466,7 +466,48 @@ void main() {
       expect(messages.join('\n'), isNot(contains('Not published')));
     });
 
-    test('asks again, with the recorded answers pre-selected', () async {
+    test('asks nothing a previous pass already answered', () async {
+      // The regression this guards: `gg do review` answers the questions,
+      // and the `gg do publish` right after it must not ask them again.
+      final adapter = _StubAdapter([1]);
+      final planner = makePlanner(adapter: adapter);
+      await gg.RepoPublishConfig(
+        versionIncrement: VersionIncrement.minor,
+        mergeMessage: 'from the review',
+      ).save(file: gg.repoPublishConfigFile(repoDir('A')));
+
+      final plan = await planner.plan(
+        ticketDir: ticketDir,
+        subs: [node('A')],
+        ggLog: ggLog,
+      );
+
+      expect(adapter.capturedOptions, isEmpty);
+      expect(seeds, isEmpty);
+      expect(plan.entryFor('A')!.versionIncrement, 'minor');
+      expect(plan.entryFor('A')!.mergeMessage, 'from the review');
+    });
+
+    test('asks what the recorded answers leave open', () async {
+      // Only the merge message is recorded, so only the increment is asked.
+      final adapter = _StubAdapter([2]);
+      final planner = makePlanner(adapter: adapter);
+      await gg.RepoPublishConfig(
+        mergeMessage: 'from the review',
+      ).save(file: gg.repoPublishConfigFile(repoDir('A')));
+
+      final plan = await planner.plan(
+        ticketDir: ticketDir,
+        subs: [node('A')],
+        ggLog: ggLog,
+      );
+
+      expect(adapter.capturedOptions, hasLength(1));
+      expect(plan.entryFor('A')!.versionIncrement, 'major');
+    });
+
+    test('reconfigure asks again, with the recorded answers '
+        'pre-selected', () async {
       // The heart of the reconfigure requirement: an answer on disk is a
       // default, never a reason to skip the question.
       final adapter = _StubAdapter([1]);
@@ -480,6 +521,7 @@ void main() {
         ticketDir: ticketDir,
         subs: [node('A')],
         ggLog: ggLog,
+        reconfigure: true,
       );
 
       expect(adapter.capturedInitialIndices, [1]);

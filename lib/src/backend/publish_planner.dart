@@ -289,6 +289,12 @@ class PublishPlanner {
   /// [mergeOnly] asks for no version increment because a merge releases
   /// nothing. [defaultMergeMessage] (`-m`) seeds the merge-message prompt.
   ///
+  /// [reconfigure] makes the pass ask **every** question again, with what is
+  /// recorded as the pre-selected default — the behavior of `gg do review`
+  /// and `gg do configure-publish`, where re-running IS the way to correct an
+  /// earlier answer. Without it only unanswered questions are asked, so a
+  /// `gg do publish` after a review asks nothing again.
+  ///
   /// [ask] turns the questions off altogether — the pass then only decides
   /// which repositories publish. [requireAnswers] decides what happens when a
   /// repository needs an answer and stdin is no terminal: `gg do publish`
@@ -303,6 +309,7 @@ class PublishPlanner {
     bool publishUnchanged = false,
     bool mergeOnly = false,
     bool ask = true,
+    bool reconfigure = false,
     bool requireAnswers = true,
     String? defaultMergeMessage,
     PublishPlanWording wording = PublishPlanWording.publish,
@@ -356,17 +363,20 @@ class PublishPlanner {
       Version? baseline;
 
       if (doesPublish) {
-        // The questions are asked EVERY time, with the recorded answers
-        // pre-selected — a choice made in an earlier run stays correctable.
-        // Only a run nobody can answer (no terminal) falls back to what is on
-        // disk, and only when that actually answers everything.
-        if (_canAsk(
-          repoName: repoName,
-          wording: wording,
-          ask: ask,
-          must: requireAnswers,
-          hasAnswers: _configAnswers(repoConfig, mergeOnly),
-        )) {
+        // A reconfiguring pass asks EVERY time, with the recorded answers
+        // pre-selected — that is what re-running `gg do review` or
+        // `gg do configure-publish` means. Every other pass asks only what
+        // the configuration leaves open, so a `gg do publish` right after a
+        // review does not ask the very questions the review just answered.
+        final answered = _configAnswers(repoConfig, mergeOnly);
+        if ((reconfigure || !answered) &&
+            _canAsk(
+              repoName: repoName,
+              wording: wording,
+              ask: ask,
+              must: requireAnswers,
+              hasAnswers: answered,
+            )) {
           ggLog('\n${cH1(repoName)}');
           // An explicit `-m` is an instruction for this run and beats what
           // an earlier one recorded; without it the recorded answer is the
