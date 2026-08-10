@@ -11,32 +11,35 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 The family manages three folders at the workspace root:
 
 - **ocean** (`<root>/.ocean/`) — contains all registered repositories and organizations. Formerly named `.master`: `migrateMasterFolderToOcean` (in `lib/src/backend/ocean_migration.dart`) renames a legacy `.master` (and `.trash/.master`) the moment `WorkspaceUtils.defaultOceanWorkspacePath` first sees it. When both folders exist nothing is touched (`.ocean` wins, one warning); a failed rename falls back to `.master` for the run. `isInsideExistingWorkspace` stays a pure predicate that recognizes both names and never renames.
-- **Ticket workspace** (`<root>/tickets/<ticket-name>/`) — contains clones of repos scoped to a ticket.
+- **Ticket workspace** (`<root>/<ticket-name>/`) — contains clones of repos scoped to a ticket. Tickets sit **directly in the workspace root**, beside `.ocean`. The `tickets/` folder they used to be grouped in is gone; `ggMultiLegacyTicketFolder` keeps it readable, and `WorkspaceUtils.ticketDir` / `ticketDirs` resolve a name or list the tickets of both places. A ticket is recognized by its `ticket.json` (`WorkspaceUtils.isTicketDir`) — that file, not the parent folder name, is what `detectTicketPath` walks up for. `WorkspaceUtils.rootOfTicket` answers the reverse question and knows both layouts.
 - **Trash** (`<root>/.trash/<ticket-name>/`) — the sibling of `.ocean` that holds what gg removed from a ticket. `Trash` (in `lib/src/backend/trash.dart`) owns it. Closing a ticket moves the **whole ticket folder** there in one piece via `moveTicketToTrash`: repositories as they are, `ticket.json`, `.gg/` and the `<ticket>.code-workspace` file. Nothing is deleted. A *non-empty* target — a ticket of the same name closed earlier — gets a ` (2)`, ` (3)`, … suffix, so trash content is never overwritten. `moveFromTicket` (single entries) and `moveFromOcean` follow the same rule; all of them rename and fall back to copy + delete when trash and ticket live on different volumes. Emptying the trash is the user's job; gg never does.
 
 `WorkspaceUtils.detectTicketPath()` (in `lib/src/backend/workspace_utils.dart`) navigates up the directory tree to locate which context the CLI is running in.
 
 ## Organization folders
 
-Both workspaces group their repositories by the organization of the repo's git URL:
+The **ocean** groups its repositories by the organization of the repo's git URL; a **ticket** does not:
 
 ```
-<root>/.ocean/<org>/<repo>          e.g. .ocean/ggsuite/gg_multi
-<root>/tickets/<ticket>/<org>/<repo> e.g. tickets/33_org_folders/ggsuite/gg_multi
+<root>/.ocean/<org>/<repo>   e.g. .ocean/ggsuite/gg_multi
+<root>/<ticket>/<repo>       e.g. 108/gg_multi
 ```
 
-Without the org level, two organizations owning a repo of the same name would collide in one flat folder. The ticket mirrors the ocean layout, so a repo has the same relative path in both.
+Without the org level, two organizations owning a repo of the same name would collide in one flat folder — a real risk for the ocean, which holds everything. A ticket holds a handful of repos the user works on and is typed into constantly, so it stays flat and only creates `<ticket>/<org>/<repo>` when that collision actually happens: the repo that was there first keeps its flat spot (moving it would break the relative refs the other ticket repos hold), the newcomer of the other organization goes into an organization folder.
 
 `RepoFolderResolver` (in `lib/src/backend/repo_folder_resolver.dart`) owns the layout:
 
 | Member                                          | Role                                                                                                                                                                                                    |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `destination(workspacePath, repoUrl, repoName)` | Where a repo is cloned to. `organizationOf(url)` needs a repo in the URL — a single-segment URL stays flat. On **Azure DevOps it returns the project**, not the account: repo names are unique per project. |
+| `destination(workspacePath, repoUrl, repoName)` | Where a repo is cloned to **in the ocean**. `organizationOf(url)` needs a repo in the URL — a single-segment URL stays flat. On **Azure DevOps it returns the project**, not the account: repo names are unique per project. |
+| `ticketDestination(ticketPath, repoUrl, repoName)` | Where a repo is copied to **in a ticket**: flat, unless `<ticket>/<repo>` is already a repository of another organization — then `<ticket>/<org>/<repo>`. A repo already in the ticket resolves to the folder it occupies (matched by git remote, not by name), so adding it twice is a no-op. |
 | `repoDirs(workspacePath)`                       | All repos of a workspace. A direct child is an _organization folder_ when it is no repo itself (`isRepoDir`: `.git`, `pubspec.yaml` or `package.json`) but holds at least one. Hidden folders are skipped. |
 | `resolve(workspacePath, repoName)`              | Finds a repo anywhere in the workspace: exact path, then folder name, then manifest package name. Never returns an organization folder.                                                                   |
 | `resolveByRemoteUrl` / `urlIdentity`            | Match by git remote url instead of folder name — used by the ocean sync.                                                                                                                                 |
-| `relativePath(workspacePath, repoDir)`          | `<org>/<repo>` — used for the ticket copy destination and the `.code-workspace` entries (forward slashes).                                                                                               |
+| `relativePath(workspacePath, repoDir)`          | `<repo>`, or `<org>/<repo>` for a repo inside an organization folder — used for the `.code-workspace` entries (forward slashes).                                                                          |
 | `removeEmptyOrgFolder(...)`                     | Drops an organization folder that lost its last repo.                                                                                                                                                    |
+
+`migrateTicketToFlatFolders` (in `lib/src/backend/workspace_migration.dart`) is the ticket counterpart: it moves every ticket repo out of its organization folder up into the ticket, drops the organization folder that lost its last repo, and leaves a repo whose flat name is already taken where it is. `do add` runs it on the ticket (and re-localizes afterwards, which repairs the relative refs the move invalidates).
 
 `migrateToOrgFolders` (in `lib/src/backend/workspace_migration.dart`) recognizes a workspace created before the org folders existed — its repositories lie flat — and renames each into `<workspace>/<org>/<repo>`, with the org read from the repo's git remote. It returns the moved repo names, is a no-op once everything is nested, and skips (with a message) a repo whose organization is unknown or whose target folder is taken.
 

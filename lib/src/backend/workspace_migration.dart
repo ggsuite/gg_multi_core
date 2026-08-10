@@ -79,6 +79,71 @@ List<String> migrateToOrgFolders({
 }
 
 // .............................................................................
+/// Moves every repository of the ticket [ticketPath] out of its organization
+/// folder up into the ticket itself (`<ticket>/<repo>`).
+///
+/// This is the counterpart of [migrateToOrgFolders] for tickets: a ticket
+/// holds few repositories and is meant to be typed in, so it groups them by
+/// organization only when two of them share a name. A repository whose name
+/// is already taken in the ticket therefore stays in its organization folder,
+/// and an organization folder that loses its last repository is removed.
+///
+/// A ticket holds relative path references between its repositories, so the
+/// caller must re-localize the ticket after moving — `do add` does that in
+/// its final pass.
+///
+/// Returns the folder names of the repositories that were moved.
+List<String> migrateTicketToFlatFolders({
+  required String ticketPath,
+  required GgLog ggLog,
+}) {
+  final nested = <Directory>[
+    for (final repoDir in RepoFolderResolver.repoDirs(ticketPath))
+      if (!path.equals(repoDir.parent.path, ticketPath)) repoDir,
+  ];
+  if (nested.isEmpty) {
+    return const <String>[];
+  }
+
+  ggLog(cDetail('Moving repositories out of their organization folders ...'));
+
+  final moved = <String>[];
+  for (final repoDir in nested) {
+    final repoName = path.basename(repoDir.path);
+    final target = Directory(path.join(ticketPath, repoName));
+
+    // Two organizations own a repository of this name — exactly the case the
+    // organization folders exist for, so this one keeps its own.
+    if (target.existsSync()) {
+      ggLog(
+        cError(
+          'Cannot move $repoName out of '
+          '${path.basename(repoDir.parent.path)}: '
+          'the ticket already holds a repository of that name.',
+        ),
+      );
+      continue;
+    }
+
+    final orgDir = repoDir.parent;
+    try {
+      repoDir.renameSync(target.path);
+    } catch (e) {
+      ggLog(cError('Failed to move $repoName out of its org folder: $e'));
+      continue;
+    }
+    if (orgDir.existsSync() && orgDir.listSync().isEmpty) {
+      orgDir.deleteSync();
+    }
+
+    ggLog(darkGray('✓ $repoName'));
+    moved.add(repoName);
+  }
+
+  return moved;
+}
+
+// .............................................................................
 /// Returns the repositories that still sit directly in [workspacePath].
 ///
 /// An organization folder holds no manifest and no `.git`, so it is not

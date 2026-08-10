@@ -9,9 +9,10 @@ import 'dart:io';
 import 'package:path/path.dart' as path;
 
 import 'package:gg_multi_core/src/backend/constants.dart';
+import 'package:gg_multi_core/src/backend/workspace_utils.dart';
 
-/// The trash workspace `<root>/.trash`, the sibling of `.ocean` and
-/// `tickets` that holds everything gg removed from a ticket.
+/// The trash workspace `<root>/.trash`, the sibling of `.ocean` and of the
+/// ticket folders that holds everything gg removed from a ticket.
 ///
 /// Nothing gg deletes on behalf of the user is lost right away: a published
 /// ticket's repositories and its `.code-workspace` file are moved here, so a
@@ -24,11 +25,12 @@ class Trash {
 
   /// Returns `<root>/.trash/<ticket>` for the ticket directory [ticketDir].
   ///
-  /// [ticketDir] is `<root>/tickets/<ticket>`, so the root is its
-  /// grandparent — the same folder that holds `.ocean`.
+  /// [ticketDir] is `<root>/<ticket>`, so the root is its parent — the same
+  /// folder that holds `.ocean`. A legacy `<root>/tickets/<ticket>` has the
+  /// root one level further up; `WorkspaceUtils.rootOfTicket` knows both.
   static Directory dirForTicket(Directory ticketDir) => Directory(
     path.join(
-      ticketDir.parent.parent.path,
+      WorkspaceUtils.rootOfTicket(ticketDir),
       ggMultiTrashFolder,
       path.basename(ticketDir.path),
     ),

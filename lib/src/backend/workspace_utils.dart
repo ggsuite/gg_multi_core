@@ -10,6 +10,7 @@ import 'package:path/path.dart' as path;
 
 import 'package:gg_multi_core/src/backend/constants.dart';
 import 'package:gg_multi_core/src/backend/ocean_migration.dart';
+import 'package:gg_multi_core/src/backend/ticket_json.dart';
 
 /// Utility functions that deal with the location of workspaces on disk.
 class WorkspaceUtils {
@@ -26,10 +27,10 @@ class WorkspaceUtils {
   ///    the »auto-rename at the next start«: every command resolves this path
   ///    before it runs. When the rename is not possible, the legacy path is
   ///    returned for this run and the next start retries.
-  /// 2. If a directory named `tickets` exists in the **examined** folder, the
-  ///    parent of that folder is considered the project root and the path
-  ///    `<root>/.ocean` is returned (even if the directory does not
-  ///    yet exist).
+  /// 2. If the **examined** folder holds a ticket — either a `ticket.json` of
+  ///    its own or a legacy `tickets` directory — its parent is considered
+  ///    the project root and the path `<root>/.ocean` is returned (even if
+  ///    the directory does not yet exist).
   /// 3. If neither 1 nor 2 matches, the algorithm continues with the parent
   ///    directory. When the root of the filesystem is reached without a match
   ///    the path `<original working dir>/.ocean` is returned.  NOTE:
@@ -66,9 +67,16 @@ class WorkspaceUtils {
         return legacy;
       }
 
-      // 2. Is the current folder the root that contains `tickets`? ------------
-      if (Directory(path.join(dir.path, ggMultiTicketFolder)).existsSync()) {
+      // 2. Is the current folder a ticket, or the root of a legacy workspace
+      //    that still groups its tickets in a `tickets` folder? --------------
+      if (Directory(
+        path.join(dir.path, ggMultiLegacyTicketFolder),
+      ).existsSync()) {
         return ocean;
+      }
+      // A ticket sits directly in the root today, so the root is its parent.
+      if (isTicketDir(dir)) {
+        return path.join(dir.parent.path, ggMultiOceanFolder);
       }
 
       // 3. Go one level up or break when we are at the filesystem root. -------
@@ -121,18 +129,91 @@ class WorkspaceUtils {
 
   /// Walks up the directory tree to find a ticket directory and returns its
   /// path when found, otherwise `null`.
+  ///
+  /// A ticket is recognized by its `ticket.json` — the file `do create
+  /// ticket` writes before anything else and that every ticket carries next
+  /// to its repositories. The folder name says nothing anymore: tickets sit
+  /// directly in the workspace root, so there is no `tickets` parent left to
+  /// recognize them by. A legacy `<root>/tickets/<ticket>` is found by the
+  /// same file — and, so a ticket of an older gg that lost its `ticket.json`
+  /// is still recognized, by that parent folder name as well.
   static String? detectTicketPath(String executionPath) {
     var current = Directory(executionPath);
     while (true) {
-      final parent = current.parent;
-      if (path.basename(parent.path) == ggMultiTicketFolder) {
+      if (isTicketDir(current) ||
+          path.basename(current.parent.path) == ggMultiLegacyTicketFolder) {
         return current.path;
       }
+      final parent = current.parent;
       if (current.path == parent.path) {
         // Reached filesystem root without finding a ticket.
         return null;
       }
       current = parent;
     }
+  }
+
+  /// Returns `true` when [directory] is a ticket folder, i.e. when it holds
+  /// a `ticket.json`.
+  static bool isTicketDir(Directory directory) =>
+      File(path.join(directory.path, ticketJsonFileName)).existsSync();
+
+  /// Returns the workspace root a ticket at [ticketDir] belongs to: its
+  /// parent, or its grandparent for a legacy `<root>/tickets/<ticket>`.
+  static String rootOfTicket(Directory ticketDir) {
+    final parent = ticketDir.parent;
+    return path.basename(parent.path) == ggMultiLegacyTicketFolder
+        ? parent.parent.path
+        : parent.path;
+  }
+
+  /// Returns the folder of the ticket named [ticketName] in the workspace
+  /// [rootPath] — `<root>/<ticket>`, or the legacy `<root>/tickets/<ticket>`
+  /// when only that one exists.
+  ///
+  /// The returned directory does not have to exist; callers that create a
+  /// ticket use it as the place to create it in.
+  static Directory ticketDir({
+    required String rootPath,
+    required String ticketName,
+  }) {
+    final dir = Directory(path.join(rootPath, ticketName));
+    if (dir.existsSync()) {
+      return dir;
+    }
+    final legacy = Directory(
+      path.join(rootPath, ggMultiLegacyTicketFolder, ticketName),
+    );
+    return legacy.existsSync() ? legacy : dir;
+  }
+
+  /// Returns every ticket of the workspace [rootPath], sorted by name: the
+  /// folders that hold a `ticket.json` directly in the root, plus the ones a
+  /// legacy `<root>/tickets` folder still holds.
+  static List<Directory> ticketDirs(String rootPath) {
+    final result = <Directory>[
+      ..._ticketDirsIn(rootPath),
+      ..._ticketDirsIn(path.join(rootPath, ggMultiLegacyTicketFolder)),
+    ];
+    return result
+      ..sort((a, b) => path.basename(a.path).compareTo(path.basename(b.path)));
+  }
+
+  // ######################
+  // Private
+  // ######################
+
+  // ...........................................................................
+  /// The direct subdirectories of [parentPath] that are tickets. Hidden
+  /// folders (`.ocean`, `.trash`, …) are never tickets.
+  static List<Directory> _ticketDirsIn(String parentPath) {
+    final parent = Directory(parentPath);
+    if (!parent.existsSync()) {
+      return const <Directory>[];
+    }
+    return <Directory>[
+      for (final dir in parent.listSync().whereType<Directory>())
+        if (!path.basename(dir.path).startsWith('.') && isTicketDir(dir)) dir,
+    ];
   }
 }

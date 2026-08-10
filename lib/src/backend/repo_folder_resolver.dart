@@ -16,11 +16,16 @@ import 'package:gg_multi_core/src/backend/url_parser.dart';
 /// repos whose folder name differs from the package name), then by its git
 /// remote url.
 ///
-/// A workspace groups its repositories in folders named after the
-/// organization they belong to (`<workspace>/<org>/<repo>`), so that two
-/// organizations can own a repository of the same name. Repositories that
-/// still sit directly in the workspace (the layout gg used before) are found
-/// as well — see `workspace_migration.dart` for the step that moves them.
+/// The **ocean** groups its repositories in folders named after the
+/// organization they belong to (`<ocean>/<org>/<repo>`), so that two
+/// organizations can own a repository of the same name — see [destination]
+/// and `workspace_migration.dart` for the step that moves an old flat ocean
+/// into that layout. A **ticket** holds its repositories flat and only falls
+/// back to an organization folder on an actual name collision — see
+/// [ticketDestination].
+///
+/// Both layouts are read by the same members here: a repository is found
+/// whether it lies flat in the workspace or inside an organization folder.
 class RepoFolderResolver {
   /// Returns the folder of [repoName] inside [workspacePath] or null,
   /// matching the exact folder name first, then the manifest package name.
@@ -119,6 +124,48 @@ class RepoFolderResolver {
     return org == null
         ? path.join(workspacePath, repoName)
         : path.join(workspacePath, org, repoName);
+  }
+
+  /// Returns the folder a repository named [repoName] and cloned from
+  /// [repoUrl] belongs to inside the **ticket** [ticketPath].
+  ///
+  /// A ticket is a workbench, not an archive: it holds a handful of repos the
+  /// user works on, so they lie flat in it (`<ticket>/<repo>`) and every path
+  /// the user types stays short. The organization folders the ocean needs to
+  /// keep two same-named repos apart are only created here when that
+  /// collision actually happens: when `<ticket>/<repo>` is already taken by a
+  /// repository of *another* organization, the newcomer goes to
+  /// `<ticket>/<org>/<repo>` instead. The repo that was there first stays
+  /// where it is — moving it would break the relative references the other
+  /// ticket repos hold to it.
+  ///
+  /// A repository that is already in the ticket — flat or in an organization
+  /// folder — resolves to the folder it occupies, so adding it twice is a
+  /// no-op. It is recognized by its git remote, not by its name.
+  static String ticketDestination({
+    required String ticketPath,
+    required String repoUrl,
+    required String repoName,
+  }) {
+    final existing = resolveByRemoteUrl(
+      workspacePath: ticketPath,
+      repoUrl: repoUrl,
+    );
+    if (existing != null) {
+      return existing.path;
+    }
+
+    final flat = Directory(path.join(ticketPath, repoName));
+    if (!flat.existsSync() || !isRepoDir(flat)) {
+      return flat.path;
+    }
+
+    // Taken by a repository of another organization — the check above already
+    // ruled out that it is this one. Without a known organization there is no
+    // folder to move into, so the collision is left to the caller's
+    // »already exists« handling.
+    final org = organizationOf(repoUrl);
+    return org == null ? flat.path : path.join(ticketPath, org, repoName);
   }
 
   /// Returns the organization folder [repoUrl] belongs to, or null when the

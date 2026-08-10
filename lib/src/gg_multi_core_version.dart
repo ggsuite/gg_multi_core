@@ -9,4 +9,4 @@
 // coverage:ignore-file
 
 /// The version of the `gg_multi_core` package.
-const String ggMultiCoreVersion = '2.3.1';
+const String ggMultiCoreVersion = '3.0.0';
