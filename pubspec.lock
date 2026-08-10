@@ -234,7 +234,7 @@ packages:
     source: hosted
     version: "1.0.6"
   gg_lang:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: gg_lang
       sha256: e08bbdf718ed7041bcadff0ca209cff265f203b5967f96a3d7f1b9d652d5f76a
@@ -322,7 +322,7 @@ packages:
     source: hosted
     version: "2.0.0"
   gg_publish:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: gg_publish
       sha256: bd729a164e5760a4008b04cf0db81b63b3cbd7203d260b7f0e63d6fc8c41b7f0
