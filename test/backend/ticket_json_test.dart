@@ -178,7 +178,7 @@ void main() {
     test('derives issue id, description and repo list with urls', () {
       final ticketDir = makeDir('my_ticket');
       File(
-        path.join(ticketDir.path, '.ticket'),
+        path.join(ticketDir.path, ticketJsonFileName),
       ).writeAsStringSync('{"issue_id":"my_ticket","description":"the desc"}');
 
       // One repo with a remote, one without.
@@ -204,7 +204,7 @@ void main() {
       expect(ticket.ggVersion, ggCliVersion);
     });
 
-    test('uses an empty description when .ticket is absent', () {
+    test('uses an empty description when ticket.json is absent', () {
       final ticketDir = makeDir('no_ticket_file');
       final ticket = buildTicketJson(
         ticketDir: ticketDir,
@@ -214,10 +214,10 @@ void main() {
       expect(ticket.repositories, isEmpty);
     });
 
-    test('uses an empty description when .ticket lacks the field', () {
+    test('uses an empty description when ticket.json lacks the field', () {
       final ticketDir = makeDir('partial_ticket');
       File(
-        path.join(ticketDir.path, '.ticket'),
+        path.join(ticketDir.path, ticketJsonFileName),
       ).writeAsStringSync('{"issue_id":"x"}');
       final ticket = buildTicketJson(
         ticketDir: ticketDir,
@@ -226,9 +226,11 @@ void main() {
       expect(ticket.description, '');
     });
 
-    test('uses an empty description when .ticket is malformed', () {
+    test('uses an empty description when ticket.json is malformed', () {
       final ticketDir = makeDir('broken_ticket');
-      File(path.join(ticketDir.path, '.ticket')).writeAsStringSync('not json');
+      File(
+        path.join(ticketDir.path, ticketJsonFileName),
+      ).writeAsStringSync('not json');
       final ticket = buildTicketJson(
         ticketDir: ticketDir,
         repoDirs: const <Directory>[],
@@ -236,9 +238,11 @@ void main() {
       expect(ticket.description, '');
     });
 
-    test('uses an empty description when .ticket is not an object', () {
+    test('uses an empty description when ticket.json is not an object', () {
       final ticketDir = makeDir('array_ticket');
-      File(path.join(ticketDir.path, '.ticket')).writeAsStringSync('[1,2]');
+      File(
+        path.join(ticketDir.path, ticketJsonFileName),
+      ).writeAsStringSync('[1,2]');
       final ticket = buildTicketJson(
         ticketDir: ticketDir,
         repoDirs: const <Directory>[],
@@ -334,18 +338,6 @@ void main() {
         ),
       );
       expect(() => readTicketJson(ticketDir), throwsA(isA<Exception>()));
-    });
-  });
-
-  group('writeRootTicket', () {
-    test('writes the issue id and description as JSON', () {
-      final ticketDir = makeDir('rt');
-      writeRootTicket(ticketDir, issueId: 'feat_x', description: 'desc');
-      final f = File(path.join(ticketDir.path, '.ticket'));
-      expect(
-        f.readAsStringSync(),
-        '{"issue_id":"feat_x","description":"desc"}',
-      );
     });
   });
 }
