@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.1.0 - 2026-08-10
+
+### Added
+
+- `publish_config_io.dart`: `loadTicketRepoPublishFiles` layers the per-repo files over the legacy ticket-wide `gg-publish.json`
+
+### Changed
+
+- `PublishPlanner` keeps the answers per repository (`PublishPlan.configs` / `save()`) and asks every question again, with the recorded answer pre-selected
+- `PublishPlanEntry` carries the pull-request body built from the recorded commits
+- Refactor commit messages, version increment
+
 ## 3.0.1 - 2026-08-10
 
 ### Changed

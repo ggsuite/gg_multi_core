@@ -20,11 +20,12 @@ import 'package:path/path.dart' as path;
 ///   `node_modules/.pnpm/<pkg>/node_modules/<dep>` chains never get
 ///   dereferenced and reduced to a flat copy. The destination repo is
 ///   expected to run its package-manager's install step after copying
-///   to rebuild `node_modules` from scratch. It also excludes
-///   `.gg/gg-publish.json`: the runtime progress of a publish is
-///   gitignored and belongs to the publish of one working copy only —
-///   carried into a ticket copy it would block or corrupt the next
-///   publish there (skipped steps, wrong feature branch).
+///   to rebuild `node_modules` from scratch. It also excludes the publish
+///   files (`.gg/publish_config.json`, `.gg/publish_state.json` and the
+///   legacy `.gg/gg-publish.json`): they are gitignored and belong to the
+///   publish of one working copy only — carried into a ticket copy they
+///   would block or corrupt the next publish there (skipped steps, wrong
+///   feature branch, answers that describe another ticket's work).
 ///
 /// Throws an [ArgumentError] if the source directory does not exist.
 Future<void> copyDirectory(
@@ -32,6 +33,8 @@ Future<void> copyDirectory(
   Directory destination, {
   Set<String> skipNames = const {
     'node_modules',
+    'publish_config.json',
+    'publish_state.json',
     'gg-publish.json',
     '.gg-publish.json',
     '.ticket.json',
