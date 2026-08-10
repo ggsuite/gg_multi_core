@@ -10,6 +10,11 @@
 
 - `PublishPlanner` keeps the answers per repository (`PublishPlan.configs` / `save()`) and asks every question again, with the recorded answer pre-selected
 - `PublishPlanEntry` carries the pull-request body built from the recorded commits
+## 3.0.1 - 2026-08-10
+
+### Changed
+
+- Make sure »dart pub upgrade --tighten --major-versions« is called before publishing
 
 ## 3.0.0 - 2026-08-10
 
