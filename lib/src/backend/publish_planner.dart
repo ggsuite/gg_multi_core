@@ -1,0 +1,734 @@
+// @license
+// Copyright (c) 2019 - 2026 Dr. Gabriel Gatzsche. All Rights Reserved.
+//
+// Use of this source code is governed by terms that can be
+// found in the LICENSE file in the root of this package.
+
+import 'dart:io';
+
+import 'package:gg_console_colors/gg_console_colors.dart';
+import 'package:gg_lang/gg_lang.dart' as gg_lang;
+// ignore: lines_longer_than_80_chars
+import 'package:gg_local_package_dependencies/gg_local_package_dependencies.dart';
+import 'package:gg_log/gg_log.dart';
+import 'package:gg_one/gg_one.dart' as gg;
+import 'package:gg_publish/gg_publish.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:path/path.dart' as path;
+import 'package:pub_semver/pub_semver.dart';
+
+import 'package:gg_multi_core/src/backend/message_editor_theme.dart';
+import 'package:gg_multi_core/src/backend/publish_skip_check.dart';
+import 'package:gg_multi_core/src/backend/ticket_json.dart';
+
+// .............................................................................
+/// The ticket-level publish configuration of [ticketDir] —
+/// `<ticket>/.gg/gg-publish.json`.
+///
+/// `gg do review` writes the answers it collects here and `gg do publish`
+/// reads them, so the file is the hand-over between the two commands. It lives
+/// next to the repositories, never inside one, so git never sees it.
+File publishConfigFileFor(Directory ticketDir) =>
+    File(path.join(ticketDir.path, '.gg', 'gg-publish.json'));
+
+// .............................................................................
+/// Whether [repoDir]'s own `.gg/gg-publish.json` records completed publish
+/// steps — i.e. `gg do publish` already did irreversible work in that repo.
+///
+/// Such a repository is never skipped: its version is bumped and possibly
+/// uploaded, so leaving it out would strand a prepared release forever.
+bool repoHasPublishStepProgress(Directory repoDir) {
+  final file = gg.DoConfigurePublish.configFileFor(repoDir);
+  if (!file.existsSync()) {
+    return false;
+  }
+  try {
+    return gg.PublishConfig.load(
+      configArg: file.path,
+      fallbackDir: repoDir.path,
+    ).hasStepProgress;
+  } catch (_) {
+    // An unreadable file cannot prove progress.
+    return false;
+  }
+}
+
+// .............................................................................
+/// Reads the version [repoDir] currently declares in its manifest, or null
+/// when it declares none.
+typedef ReadManifestVersion = Future<String?> Function(Directory repoDir);
+
+// .............................................................................
+/// The default [ReadManifestVersion] — asks gg_lang for whichever manifest the
+/// repository carries. Returns null when there is none, or none with a
+/// version.
+Future<String?> defaultReadManifestVersion(Directory repoDir) async {
+  try {
+    final catalog = await gg_lang.LanguageCatalog.load();
+    return await gg_lang.Manifest.detect(
+      repoDir,
+      catalog,
+      treatBridgeAsTypeScript: true,
+    ).readVersionString();
+  } catch (_) {
+    return null;
+  }
+}
+
+// .............................................................................
+/// The answers [PublishPlanner.configureRepo] collected for one repository,
+/// plus the registry baseline its increment preview was based on.
+class RepoPublishPlan {
+  /// Constructor
+  const RepoPublishPlan({required this.override, required this.baseline});
+
+  /// The version increment and merge message chosen for the repository.
+  final gg.RepoOverride override;
+
+  /// The version the repository last published to its registry — the base
+  /// the chosen increment is applied to.
+  final Version baseline;
+}
+
+// .............................................................................
+/// The user-facing wording of a planning pass.
+///
+/// The pass is shared by `gg do review`, `gg do publish` and
+/// `gg do publish --merge-only`, which differ only in the words they put
+/// around the very same decisions.
+class PublishPlanWording {
+  /// Constructor
+  const PublishPlanWording({
+    required this.action,
+    required this.done,
+    required this.command,
+    required this.skipPrefix,
+  });
+
+  /// The noun of the run — `publish` or `merge`.
+  final String action;
+
+  /// The past participle of the run — `published` or `merged`.
+  final String done;
+
+  /// The command the user would re-run, named in the »nobody can be asked«
+  /// error.
+  final String command;
+
+  /// How the per-repo skip line starts, before the reason.
+  final String skipPrefix;
+
+  /// Wording of a regular `gg do publish` run.
+  static const PublishPlanWording publish = PublishPlanWording(
+    action: 'publish',
+    done: 'published',
+    command: 'gg do publish',
+    skipPrefix: 'Not published.',
+  );
+
+  /// Wording of a `gg do publish --merge-only` run.
+  static const PublishPlanWording merge = PublishPlanWording(
+    action: 'merge',
+    done: 'merged',
+    command: 'gg do publish --merge-only',
+    skipPrefix: 'Not merged.',
+  );
+
+  /// Wording of the planning pass `gg do review` runs — a repository that
+  /// needs no release gets no pull request either.
+  static const PublishPlanWording review = PublishPlanWording(
+    action: 'publish',
+    done: 'published',
+    command: 'gg do review',
+    skipPrefix: 'Not published — no pull request.',
+  );
+}
+
+// .............................................................................
+/// What a publish run will do with one repository of a ticket.
+class PublishPlanEntry {
+  /// Constructor
+  const PublishPlanEntry({
+    required this.name,
+    required this.directory,
+    required this.publishes,
+    required this.reason,
+    required this.alreadyPublished,
+    this.versionIncrement,
+    this.mergeMessage,
+  });
+
+  /// The repository's folder name — the key of its `.gg-publish.json` entry.
+  final String name;
+
+  /// The repository's folder.
+  final Directory directory;
+
+  /// Whether the repository needs a release.
+  final bool publishes;
+
+  /// Why it needs one — or why it does not.
+  final String reason;
+
+  /// Whether an earlier run of the same publish already released it.
+  final bool alreadyPublished;
+
+  /// The increment it will be published with, or null when unknown.
+  final String? versionIncrement;
+
+  /// The merge message it will be published with, or null when unknown.
+  /// `gg do review` uses it as the title of the repository's pull request.
+  final String? mergeMessage;
+}
+
+// .............................................................................
+/// The outcome of [PublishPlanner.plan].
+class PublishPlan {
+  /// Constructor
+  const PublishPlan({required this.entries, required this.config});
+
+  /// One entry per ticket repository, in dependency order.
+  final List<PublishPlanEntry> entries;
+
+  /// The configuration the run publishes with — the one that was loaded,
+  /// extended by the answers the pass collected.
+  final gg.PublishConfig config;
+
+  /// The names of the repositories that need a release.
+  Set<String> get publishes => <String>{
+    for (final entry in entries)
+      if (entry.publishes) entry.name,
+  };
+
+  /// Whether any repository needs a release at all.
+  bool get anyPublishes => entries.any((entry) => entry.publishes);
+
+  /// The entry of [name], or null when the ticket has no such repository.
+  PublishPlanEntry? entryFor(String name) {
+    for (final entry in entries) {
+      if (entry.name == name) {
+        return entry;
+      }
+    }
+    return null;
+  }
+}
+
+// .............................................................................
+/// Decides what a ticket's publish run does with each of its repositories,
+/// and collects the answers the run needs — in one pass, in dependency order.
+///
+/// Per repository the pass
+///
+/// 1. decides whether a release is needed ([PublishSkipCheck], unless
+///    `publishUnchanged` forces one or the repository already carries publish
+///    step progress),
+/// 2. asks the version increment and the merge message — but **only** for a
+///    repository that publishes, and only when the configuration does not
+///    already answer them, and
+/// 3. predicts the version the repositories after it resolve against: a
+///    skipped one contributes its unchanged manifest version, a publishing one
+///    the version its increment will produce.
+///
+/// One pass suffices because the repositories arrive in dependency order: a
+/// repository's decision depends only on its own state and on the versions of
+/// the dependencies before it, which are final by the time it is reached.
+/// Everything undecidable predicts null, which makes dependents publish rather
+/// than resolve against a guess.
+///
+/// `gg do review` runs the pass to learn which repositories get a pull request
+/// — and to ask the questions there instead of at publish time; `gg do publish`
+/// runs it to plan the release. Both write their answers into the ticket's
+/// `.gg/gg-publish.json`, so whoever runs second asks nothing again.
+class PublishPlanner {
+  /// Constructor
+  PublishPlanner({
+    required this.ggLog,
+    PublishSkipCheck? publishSkipCheck,
+    PublishedVersion? publishedVersion,
+    ReadManifestVersion? readManifestVersion,
+    gg.VersionSelector? versionSelector,
+    EditMessage? editMessage,
+    gg.HasTerminal? hasTerminal,
+  }) : _publishSkipCheck = publishSkipCheck ?? PublishSkipCheck(),
+       _publishedVersion = publishedVersion ?? PublishedVersion(ggLog: ggLog),
+       _readManifestVersion = readManifestVersion ?? defaultReadManifestVersion,
+       _versionSelector = versionSelector ?? gg.VersionSelector(),
+       _editMessage = editMessage ?? _defaultEditMessage,
+       _hasTerminal = hasTerminal ?? gg.defaultHasTerminal;
+
+  /// The log function
+  final GgLog ggLog;
+
+  /// Decides whether an unchanged repository needs to be published at all.
+  final PublishSkipCheck _publishSkipCheck;
+
+  /// Reads the version a repository last published to its registry.
+  final PublishedVersion _publishedVersion;
+
+  /// Reads the version a repository currently declares in its manifest.
+  final ReadManifestVersion _readManifestVersion;
+
+  /// Lets the user pick the version increment (patch/minor/major) per repo.
+  final gg.VersionSelector _versionSelector;
+
+  /// Opens an interactive editor for a repository's merge message.
+  final EditMessage _editMessage;
+
+  /// Whether stdin is a terminal — without one nobody can answer a prompt.
+  final gg.HasTerminal _hasTerminal;
+
+  // ...........................................................................
+  /// Plans the run for the repositories [subs] of the ticket in [ticketDir].
+  ///
+  /// [config] is whatever configuration the files already supply; its answers
+  /// are reused and never asked again. [continueRun] makes a repository marked
+  /// `published` count as done, [publishUnchanged] releases every repository,
+  /// [mergeOnly] asks for no version increment because a merge releases
+  /// nothing. [defaultMergeMessage] (`-m`) seeds the merge-message prompt.
+  ///
+  /// [ask] turns the questions off altogether — the pass then only decides
+  /// which repositories publish. [requireAnswers] decides what happens when a
+  /// repository needs an answer and stdin is no terminal: `gg do publish`
+  /// fails (it cannot release without an increment), `gg do review` passes
+  /// false and leaves the question to the publish — its own job, filtering the
+  /// pull requests, needs no answer.
+  Future<PublishPlan> plan({
+    required Directory ticketDir,
+    required List<Node> subs,
+    required GgLog ggLog,
+    gg.PublishConfig? config,
+    bool continueRun = false,
+    bool publishUnchanged = false,
+    bool mergeOnly = false,
+    bool ask = true,
+    bool requireAnswers = true,
+    String? defaultMergeMessage,
+    PublishPlanWording wording = PublishPlanWording.publish,
+  }) async {
+    final seedMessage = seedMessageFor(
+      ticketDir: ticketDir,
+      defaultMergeMessage: defaultMergeMessage,
+    );
+
+    // The versions later repos are judged against. A skipped repo contributes
+    // its unchanged manifest version, a publishing one the version its chosen
+    // increment will produce — computed exactly like gg_one computes it, from
+    // the version last seen on the registry.
+    final refVersions = <String, String>{};
+    final answers = <String, gg.RepoOverride>{};
+    final entries = <PublishPlanEntry>[];
+
+    for (final repo in subs) {
+      final repoDir = repo.directory;
+      final repoName = path.basename(repoDir.path);
+
+      final alreadyPublished =
+          continueRun && (config?.statusForRepo(repoName) == 'published');
+
+      final bool doesPublish;
+      final String reason;
+      if (alreadyPublished) {
+        doesPublish = false;
+        reason = 'already ${wording.done}';
+      } else if (publishUnchanged) {
+        doesPublish = true;
+        reason = '--publish-unchanged';
+      } else if (repoHasPublishStepProgress(repoDir)) {
+        doesPublish = true;
+        reason = 'a previous run already started publishing it';
+      } else {
+        final decision = await _publishSkipCheck.get(
+          repo: repo,
+          refVersions: refVersions,
+        );
+        doesPublish = !decision.skip;
+        reason = decision.reason;
+      }
+
+      Version? baseline;
+      var increment = _incrementFor(config, repoName);
+      var message = _mergeMessageFor(config, repoName);
+
+      if (doesPublish) {
+        // Ask only what the configuration does not already answer.
+        if (!_configCovers(config, repoName, mergeOnly) &&
+            _canAsk(
+              repoName: repoName,
+              wording: wording,
+              ask: ask,
+              must: requireAnswers,
+            )) {
+          ggLog('\n${cH1(repoName)}');
+          final asked = await configureRepo(
+            repoDir: repoDir,
+            seedMessage: seedMessage,
+            mergeOnly: mergeOnly,
+          );
+          answers[repoName] = asked.override;
+          baseline = asked.baseline;
+          increment = asked.override.versionIncrement ?? increment;
+          message = asked.override.mergeMessage ?? message;
+        }
+      } else if (!alreadyPublished) {
+        ggLog(
+          [
+            '\n${cH1(repoName)}',
+            cDetail('✓ ${wording.skipPrefix} $reason'),
+          ].join('\n'),
+        );
+      }
+
+      entries.add(
+        PublishPlanEntry(
+          name: repoName,
+          directory: repoDir,
+          publishes: doesPublish,
+          reason: reason,
+          alreadyPublished: alreadyPublished,
+          versionIncrement: increment,
+          mergeMessage: message,
+        ),
+      );
+
+      // Predict what later repos will resolve against.
+      final predicted = await _predictedVersion(
+        repoDir: repoDir,
+        doesPublish: doesPublish,
+        mergeOnly: mergeOnly,
+        increment: increment,
+        channel: config?.channelForRepo(repoName),
+        baseline: baseline,
+      );
+
+      for (final name in (await publishedNames(repoDir, repoName)).values) {
+        if (predicted != null && predicted.isNotEmpty) {
+          refVersions[name] = predicted;
+        } else {
+          // Unknown beats a guess: a dependent then publishes rather than
+          // resolving against a version that may never exist.
+          refVersions.remove(name);
+        }
+      }
+    }
+
+    return PublishPlan(
+      entries: entries,
+      config: _mergedConfig(base: config, answers: answers),
+    );
+  }
+
+  // ...........................................................................
+  /// The merge-message seed of a ticket: an explicit `-m` wins, otherwise the
+  /// ticket description.
+  ///
+  /// It pre-fills the per-repo prompt and is the fallback when the user clears
+  /// it — the config model rejects an empty merge message.
+  static String seedMessageFor({
+    required Directory ticketDir,
+    String? defaultMergeMessage,
+  }) {
+    final trimmed = defaultMergeMessage?.trim();
+    if (trimmed != null && trimmed.isNotEmpty) {
+      return trimmed;
+    }
+    return readTicketDescription(ticketDir) ?? '';
+  }
+
+  // ...........................................................................
+  /// Asks the publish questions for the single repository [repoDir] and
+  /// returns the answers plus the registry baseline the increment preview was
+  /// calculated from.
+  ///
+  /// The baseline travels with the answers so the caller can predict the
+  /// version this repo will publish — without a second registry lookup.
+  ///
+  /// No repository header is logged here; the caller owns it, because it
+  /// alone knows whether it has something to say about this repo at all.
+  Future<RepoPublishPlan> configureRepo({
+    required Directory repoDir,
+    required String seedMessage,
+    bool mergeOnly = false,
+  }) async {
+    final repoName = path.basename(repoDir.path);
+    final baseline = await _baselineVersion(repoDir);
+
+    // A merge-only run releases nothing — no version bump, no changelog
+    // heading, no tag. Asking for an increment would offer a version that
+    // is never created, so the prompt is skipped and none is stored.
+    final increment = mergeOnly
+        ? null
+        : await _versionSelector.selectIncrement(currentVersion: baseline);
+
+    // A merge message must never be empty (the config model rejects it), so
+    // fall back to the seed (-m or ticket description) and finally a generic
+    // default.
+    var message = (await _editMessage(seedMessage) ?? '').trim();
+    if (message.isEmpty) {
+      message = seedMessage;
+    }
+    if (message.isEmpty) {
+      message = 'Publish $repoName';
+    }
+
+    return RepoPublishPlan(
+      override: gg.RepoOverride(
+        versionIncrement: increment?.name,
+        mergeMessage: message,
+      ),
+      baseline: baseline,
+    );
+  }
+
+  // ...........................................................................
+  /// The names [repoDir] is known under on the registries it publishes to.
+  ///
+  /// A hybrid is `base_dna` to its Dart dependents and `@tssuite/base-dna` to
+  /// its npm ones, so each ecosystem's constraint is updated separately. Falls
+  /// back to a single entry named after the manifest — or after [fallback],
+  /// the repository directory — when no registry is configured: a git-only
+  /// repo has none, but its dependents still resolve it by name.
+  Future<Map<gg_lang.PublishTarget, String>> publishedNames(
+    Directory repoDir,
+    String fallback,
+  ) async {
+    final result = <gg_lang.PublishTarget, String>{};
+    try {
+      final catalog = await gg_lang.LanguageCatalog.load();
+      final targets = await gg_lang.publishTargetsOf(repoDir, catalog: catalog);
+      for (final target in targets.ordered) {
+        result[target] = await target.manifestIn(repoDir, catalog).readName();
+      }
+      // coverage:ignore-start
+    } catch (_) {
+      return <gg_lang.PublishTarget, String>{
+        gg_lang.PublishTarget.pubDev: fallback,
+      };
+    }
+    // coverage:ignore-end
+
+    if (result.isEmpty) {
+      result[gg_lang.PublishTarget.pubDev] = await _manifestNameOf(
+        repoDir,
+        fallback,
+      );
+    }
+    return result;
+  }
+
+  // ######################
+  // Private
+  // ######################
+
+  // ...........................................................................
+  /// Reads the package name from whichever manifest [repoDir] carries.
+  Future<String> _manifestNameOf(Directory repoDir, String fallback) async {
+    try {
+      final catalog = await gg_lang.LanguageCatalog.load();
+      return await gg_lang.Manifest.detect(
+        repoDir,
+        catalog,
+        treatBridgeAsTypeScript: true,
+      ).readName();
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  // ...........................................................................
+  /// Whether [config] already answers every question [repoName] needs.
+  ///
+  /// Asks the config itself, so the top-level defaults count exactly as much
+  /// as a per-repo override — `forRepo` throws when neither supplies a value.
+  bool _configCovers(
+    gg.PublishConfig? config,
+    String repoName,
+    bool mergeOnly,
+  ) {
+    if (config == null) {
+      return false;
+    }
+    try {
+      config.forRepo(
+        repoName: repoName,
+        configPath: '',
+        requireVersionIncrement: !mergeOnly,
+      );
+      return true;
+    } on FormatException {
+      return false;
+    }
+  }
+
+  // ...........................................................................
+  /// The version increment [repoName] will publish with, or null when the
+  /// config supplies none — the top-level default counts.
+  ///
+  /// Same precedence `PublishConfig.forRepo` applies — the per-repo override
+  /// first, the top-level default second — but without its »missing field«
+  /// exception: a missing increment is an answer here, not an error.
+  String? _incrementFor(gg.PublishConfig? config, String repoName) =>
+      config?.repos[repoName]?.versionIncrement ?? config?.versionIncrement;
+
+  // ...........................................................................
+  /// The merge message [repoName] will publish with — same precedence as
+  /// [_incrementFor], null when the config supplies none.
+  String? _mergeMessageFor(gg.PublishConfig? config, String repoName) =>
+      config?.repos[repoName]?.mergeMessage ?? config?.mergeMessage;
+
+  // ...........................................................................
+  /// Whether the questions for [repoName] can be asked at all.
+  ///
+  /// Throws when nobody can be asked and the run cannot go on without the
+  /// answers ([must]); returns false when the caller turned the questions off
+  /// ([ask]) or can live without them.
+  bool _canAsk({
+    required String repoName,
+    required PublishPlanWording wording,
+    required bool ask,
+    required bool must,
+  }) {
+    if (!ask) {
+      return false;
+    }
+    if (_hasTerminal()) {
+      return true;
+    }
+    if (!must) {
+      return false;
+    }
+    throw Exception(
+      cError(
+        '$repoName needs a ${wording.action}, but no version increment / '
+        'merge message is configured and stdin is no terminal.\n'
+        'Provide one of:\n'
+        '  - ${cCmd('gg do configure-publish')} (interactively, then re-run)\n'
+        '  - ${cCmd('${wording.command} --config <file>')}',
+      ),
+    );
+  }
+
+  // ...........................................................................
+  /// The version later repos will resolve this repository against.
+  ///
+  /// A repo that does not publish keeps its manifest version — that is exact.
+  /// A publishing one gets [baseline] plus the chosen increment, the same
+  /// arithmetic gg_one performs. Everything undecidable answers null, which
+  /// makes dependents publish instead of trusting a guess.
+  Future<String?> _predictedVersion({
+    required Directory repoDir,
+    required bool doesPublish,
+    required bool mergeOnly,
+    required String? increment,
+    required String? channel,
+    required Version? baseline,
+  }) async {
+    // A merge releases nothing, so no version changes.
+    if (!doesPublish || mergeOnly) {
+      return _readManifestVersion(repoDir);
+    }
+
+    // A release candidate carries a suffix this arithmetic does not model.
+    if (channel != null && channel != 'stable') {
+      return null;
+    }
+
+    try {
+      final base =
+          baseline ??
+          await _publishedVersion.get(directory: repoDir, ggLog: (_) {});
+      return switch (increment) {
+        'major' => base.nextMajor.toString(),
+        'minor' => base.nextMinor.toString(),
+        'patch' => base.nextPatch.toString(),
+        _ => null,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ...........................................................................
+  /// Merges the freshly collected [answers] into [base], keeping the status
+  /// and channel markers a resume depends on.
+  gg.PublishConfig _mergedConfig({
+    required gg.PublishConfig? base,
+    required Map<String, gg.RepoOverride> answers,
+  }) {
+    final repos = <String, gg.RepoOverride>{...?base?.repos};
+    for (final entry in answers.entries) {
+      // An empty stand-in for a repo the configuration did not mention keeps
+      // the merge one expression per field instead of a null check per field.
+      final existing = repos[entry.key] ?? gg.RepoOverride();
+      repos[entry.key] = gg.RepoOverride(
+        versionIncrement:
+            entry.value.versionIncrement ?? existing.versionIncrement,
+        mergeMessage: entry.value.mergeMessage ?? existing.mergeMessage,
+        // Channel and status belong to the run, not to the answer — a resume
+        // depends on them, so they survive untouched.
+        channel: existing.channel,
+        status: existing.status,
+      );
+    }
+    // The top-level defaults are what most configurations actually carry —
+    // dropping them here would make every later `forRepo` fail.
+    return gg.PublishConfig(
+      versionIncrement: base?.versionIncrement,
+      mergeMessage: base?.mergeMessage,
+      channel: base?.channel,
+      deleteTicket: base?.deleteTicket,
+      deleteFeatureBranch: base?.deleteFeatureBranch,
+      pr: base?.pr,
+      branch: base?.branch,
+      doneSteps: base?.doneSteps,
+      repos: repos,
+    );
+  }
+
+  // ...........................................................................
+  /// Returns the baseline the increment preview is calculated from: the
+  /// version [repoDir] last published to its registry (pub.dev / npm), with
+  /// the git version tag as fallback for private and manifest-less repos.
+  ///
+  /// The manifest is deliberately *not* used. `gg do publish` bumps from the
+  /// published version, so a `pubspec.yaml` that lags behind the registry —
+  /// which is the normal state after a publish, since only main carries the
+  /// released version — would preview a version the publish never creates.
+  ///
+  /// Defaults to 0.0.0 when nothing can be determined (e.g. a repo without a
+  /// version). A failing lookup (e.g. the registry is unreachable) is reported
+  /// instead of being swallowed, so a network hiccup does not silently look
+  /// like a repo that was never published.
+  ///
+  /// *Every* failure lands here, not just `Exception`s: a folder that is no
+  /// git repository makes the tag fallback throw an `ArgumentError`, and no
+  /// lookup for a version preview may ever fail the run around it.
+  Future<Version> _baselineVersion(Directory repoDir) async {
+    try {
+      return await _publishedVersion.get(directory: repoDir, ggLog: ggLog);
+    } catch (e) {
+      ggLog(
+        cWarn(
+          '⚠️ Could not determine the published version, assuming 0.0.0: $e',
+        ),
+      );
+      return Version(0, 0, 0);
+    }
+  }
+
+  // ...........................................................................
+  /// Opens the shared message editor for the merge message.
+  // coverage:ignore-start
+  static Future<String?> _defaultEditMessage(String initialMessage) =>
+      editMessage(
+        initialMessage,
+        prompt: 'Edit merge message:',
+        subject: 'the merge message prompt',
+        hint: 'pass -m <message> or provide a config file via --config',
+      );
+  // coverage:ignore-end
+}
+
+// .............................................................................
+/// Mock for [PublishPlanner]
+class MockPublishPlanner extends Mock implements PublishPlanner {}
