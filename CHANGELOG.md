@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.1.1 - 2026-08-11
+
+### Changed
+
+- "First javascript implementation"
+- Fix shell changes
+
 ## 3.1.0 - 2026-08-10
 
 ### Added
