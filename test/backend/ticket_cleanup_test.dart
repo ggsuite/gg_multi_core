@@ -56,16 +56,13 @@ void main() {
       final repoA = repo('ggsuite', 'a');
       final repoB = repo('ggsuite', 'b');
       // The ticket's own files must travel with it, not be deleted.
-      File(
-        path.join(ticketDir.path, 'T1.code-workspace'),
-      ).writeAsStringSync('{}');
-      File(
-        path.join(ticketDir.path, 'ticket.json'),
-      ).writeAsStringSync('{"issue_id":"T1"}');
+      File(path.join(ticketDir.path, 'T1.code-workspace'))
+          .writeAsStringSync('{}');
+      File(path.join(ticketDir.path, 'ticket.json'))
+          .writeAsStringSync('{"issue_id":"T1"}');
       Directory(path.join(ticketDir.path, '.gg')).createSync();
-      File(
-        path.join(ticketDir.path, '.gg', '.gg.json'),
-      ).writeAsStringSync('{}');
+      File(path.join(ticketDir.path, '.gg', '.gg.json'))
+          .writeAsStringSync('{}');
       final deletedBranches = <String>[];
 
       await cleanUpTicket(

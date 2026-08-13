@@ -40,9 +40,8 @@ void main() {
     }
     if (remoteUrl != null) {
       final gitDir = Directory(path.join(dir.path, '.git'))..createSync();
-      File(
-        path.join(gitDir.path, 'config'),
-      ).writeAsStringSync('[remote "origin"]\n\turl = $remoteUrl\n');
+      File(path.join(gitDir.path, 'config'))
+          .writeAsStringSync('[remote "origin"]\n\turl = $remoteUrl\n');
     }
     return dir;
   }

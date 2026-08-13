@@ -46,9 +46,8 @@ void main() {
         ? ''
         : 'repository: https://github.com/'
               '${declaredOrg ?? org}/$declaredRepo.git\n';
-    File(
-      path.join(dir.path, 'pubspec.yaml'),
-    ).writeAsStringSync('name: $packageName\nversion: 1.0.0\n$repository');
+    File(path.join(dir.path, 'pubspec.yaml'))
+        .writeAsStringSync('name: $packageName\nversion: 1.0.0\n$repository');
 
     return dir;
   }

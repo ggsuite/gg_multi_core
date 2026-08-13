@@ -182,9 +182,8 @@ void writeTicketJson(Directory ticketDir, TicketJson ticket) {
   if (!ticketDir.existsSync()) {
     ticketDir.createSync(recursive: true);
   }
-  File(
-    path.join(ticketDir.path, ticketJsonFileName),
-  ).writeAsStringSync(ticket.toPrettyJson());
+  File(path.join(ticketDir.path, ticketJsonFileName))
+      .writeAsStringSync(ticket.toPrettyJson());
 }
 
 /// Reads `<ticketDir>/ticket.json`, or returns `null` when the file is missing

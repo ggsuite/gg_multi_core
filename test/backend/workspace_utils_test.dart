@@ -66,9 +66,8 @@ void main() {
       // Arrange ---------------------------------------------------------------
       final ticketDir = Directory(path.join(tempRoot.path, 'ticket_123'))
         ..createSync(recursive: true);
-      File(
-        path.join(ticketDir.path, ticketJsonFileName),
-      ).writeAsStringSync('{"issue_id": "ticket_123"}');
+      File(path.join(ticketDir.path, ticketJsonFileName))
+          .writeAsStringSync('{"issue_id": "ticket_123"}');
 
       // Act -------------------------------------------------------------------
       final result = WorkspaceUtils.defaultOceanWorkspacePath(
@@ -356,9 +355,8 @@ void main() {
     });
 
     test('does not mistake the workspace root for a ticket', () async {
-      Directory(
-        path.join(tempRoot.path, ggMultiOceanFolder),
-      ).createSync(recursive: true);
+      Directory(path.join(tempRoot.path, ggMultiOceanFolder))
+          .createSync(recursive: true);
       expect(WorkspaceUtils.detectTicketPath(tempRoot.path), isNull);
     });
   });
@@ -456,9 +454,8 @@ void main() {
         Directory(path.join(tempRoot.path, 'plain')).createSync();
 
         expect(
-          WorkspaceUtils.ticketDirs(
-            tempRoot.path,
-          ).map((d) => path.basename(d.path)),
+          WorkspaceUtils.ticketDirs(tempRoot.path)
+              .map((d) => path.basename(d.path)),
           <String>['T0', 'T1', 'T2'],
         );
       });
@@ -477,8 +474,7 @@ void main() {
 Directory makeTicket(Directory parent, String name) {
   final dir = Directory(path.join(parent.path, name))
     ..createSync(recursive: true);
-  File(
-    path.join(dir.path, ticketJsonFileName),
-  ).writeAsStringSync('{"issue_id": "$name"}');
+  File(path.join(dir.path, ticketJsonFileName))
+      .writeAsStringSync('{"issue_id": "$name"}');
   return dir;
 }

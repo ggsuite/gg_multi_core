@@ -202,9 +202,8 @@ void main() {
           key: 'canReview',
         );
 
-        final raw = File(
-          path.join(ticketDir.path, '.gg.json'),
-        ).readAsStringSync();
+        final raw = File(path.join(ticketDir.path, '.gg.json'))
+            .readAsStringSync();
         final data = jsonDecode(raw) as Map<String, dynamic>;
         expect(data['canPublish'], isNotNull);
         expect(data['canReview'], isNotNull);
@@ -222,9 +221,8 @@ void main() {
 
         await state.reset(ticketDir: ticketDir);
 
-        final raw = File(
-          path.join(ticketDir.path, '.gg.json'),
-        ).readAsStringSync();
+        final raw = File(path.join(ticketDir.path, '.gg.json'))
+            .readAsStringSync();
         expect(raw, '{}');
       });
 

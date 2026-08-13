@@ -43,18 +43,16 @@ void main() {
       ).writeAsStringSync('name: $pubspecName\nversion: 1.0.0$flutterBlock\n');
     }
     if (packageJsonName != null) {
-      File(
-        path.join(dir.path, 'package.json'),
-      ).writeAsStringSync('{"name": "$packageJsonName"}');
+      File(path.join(dir.path, 'package.json'))
+          .writeAsStringSync('{"name": "$packageJsonName"}');
     }
     if (tsconfig) {
       File(path.join(dir.path, 'tsconfig.json')).writeAsStringSync('{}');
     }
     if (remoteUrl != null) {
       final gitDir = Directory(path.join(dir.path, '.git'))..createSync();
-      File(
-        path.join(gitDir.path, 'config'),
-      ).writeAsStringSync('[remote "origin"]\n\turl = $remoteUrl\n');
+      File(path.join(gitDir.path, 'config'))
+          .writeAsStringSync('[remote "origin"]\n\turl = $remoteUrl\n');
     }
     return dir;
   }
@@ -184,18 +182,16 @@ void main() {
 
       test('returns null when pubspec has no name', () {
         final dir = Directory(path.join(workspace.path, 'x'))..createSync();
-        File(
-          path.join(dir.path, 'pubspec.yaml'),
-        ).writeAsStringSync('version: 1.0.0\n');
+        File(path.join(dir.path, 'pubspec.yaml'))
+            .writeAsStringSync('version: 1.0.0\n');
         expect(RepoFolderResolver.packageName(dir), isNull);
       });
 
       test('returns null when pubspec cannot be decoded', () {
         final dir = Directory(path.join(workspace.path, 'x'))..createSync();
         // Invalid UTF-8 bytes make readAsStringSync throw.
-        File(
-          path.join(dir.path, 'pubspec.yaml'),
-        ).writeAsBytesSync(<int>[0xC3, 0x28]);
+        File(path.join(dir.path, 'pubspec.yaml'))
+            .writeAsBytesSync(<int>[0xC3, 0x28]);
         expect(RepoFolderResolver.packageName(dir), isNull);
       });
 
@@ -217,9 +213,8 @@ void main() {
 
       test('returns null when package.json is invalid', () {
         final dir = Directory(path.join(workspace.path, 'x'))..createSync();
-        File(
-          path.join(dir.path, 'package.json'),
-        ).writeAsStringSync('{not json');
+        File(path.join(dir.path, 'package.json'))
+            .writeAsStringSync('{not json');
         expect(RepoFolderResolver.packageName(dir), isNull);
       });
 
@@ -256,17 +251,15 @@ void main() {
 
       test('is empty when the pubspec has no name', () {
         final dir = Directory(path.join(workspace.path, 'x'))..createSync();
-        File(
-          path.join(dir.path, 'pubspec.yaml'),
-        ).writeAsStringSync('version: 1.0.0\n');
+        File(path.join(dir.path, 'pubspec.yaml'))
+            .writeAsStringSync('version: 1.0.0\n');
         expect(RepoFolderResolver.packageNames(dir), isEmpty);
       });
 
       test('keeps what it read when a manifest is unreadable', () {
         final dir = makeRepo('x', pubspecName: 'gg_foo');
-        File(
-          path.join(dir.path, 'package.json'),
-        ).writeAsStringSync('{not json');
+        File(path.join(dir.path, 'package.json'))
+            .writeAsStringSync('{not json');
         expect(RepoFolderResolver.packageNames(dir), {'gg_foo'});
       });
 
@@ -514,9 +507,8 @@ void main() {
 
         test('does nothing when the organization folder is gone', () {
           final repo = makeOrgRepo('ggsuite', 'gg_foo');
-          Directory(
-            path.join(workspace.path, 'ggsuite'),
-          ).deleteSync(recursive: true);
+          Directory(path.join(workspace.path, 'ggsuite'))
+              .deleteSync(recursive: true);
 
           RepoFolderResolver.removeEmptyOrgFolder(
             workspacePath: workspace.path,

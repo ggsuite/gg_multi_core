@@ -210,9 +210,8 @@ void main() {
   group('defaultReadManifestVersion', () {
     test('reads the version of a Dart package', () async {
       final dir = repoDir('A');
-      File(
-        path.join(dir.path, 'pubspec.yaml'),
-      ).writeAsStringSync('name: a\nversion: 4.5.6\n');
+      File(path.join(dir.path, 'pubspec.yaml'))
+          .writeAsStringSync('name: a\nversion: 4.5.6\n');
       expect(await defaultReadManifestVersion(dir), '4.5.6');
     });
 
@@ -224,9 +223,8 @@ void main() {
   // ###########################################################################
   group('seedMessageFor', () {
     test('prefers an explicit message over the ticket description', () {
-      File(
-        path.join(ticketDir.path, ticketJsonFileName),
-      ).writeAsStringSync('{"description": "Ticket desc"}');
+      File(path.join(ticketDir.path, ticketJsonFileName))
+          .writeAsStringSync('{"description": "Ticket desc"}');
       expect(
         PublishPlanner.seedMessageFor(
           ticketDir: ticketDir,
@@ -237,9 +235,8 @@ void main() {
     });
 
     test('falls back to the ticket description', () {
-      File(
-        path.join(ticketDir.path, ticketJsonFileName),
-      ).writeAsStringSync('{"description": "Ticket desc"}');
+      File(path.join(ticketDir.path, ticketJsonFileName))
+          .writeAsStringSync('{"description": "Ticket desc"}');
       expect(
         PublishPlanner.seedMessageFor(
           ticketDir: ticketDir,
@@ -326,9 +323,8 @@ void main() {
   group('publishedNames', () {
     test('reports the pub.dev name of a Dart package', () async {
       final dir = repoDir('folder-name');
-      File(
-        path.join(dir.path, 'pubspec.yaml'),
-      ).writeAsStringSync('name: a_package\nversion: 1.0.0\n');
+      File(path.join(dir.path, 'pubspec.yaml'))
+          .writeAsStringSync('name: a_package\nversion: 1.0.0\n');
 
       final names = await makePlanner().publishedNames(dir, 'folder-name');
       expect(names[gg_lang.PublishTarget.pubDev], 'a_package');
@@ -449,9 +445,8 @@ void main() {
 
     test('treats a repo the resume marks published as done', () async {
       final planner = makePlanner(increments: const []);
-      await gg.PublishState(
-        status: 'published',
-      ).save(file: gg.publishStateFile(repoDir('A')));
+      await gg.PublishState(status: 'published')
+          .save(file: gg.publishStateFile(repoDir('A')));
 
       final plan = await planner.plan(
         ticketDir: ticketDir,
@@ -492,9 +487,8 @@ void main() {
       // Only the merge message is recorded, so only the increment is asked.
       final adapter = _StubAdapter([2]);
       final planner = makePlanner(adapter: adapter);
-      await gg.RepoPublishConfig(
-        mergeMessage: 'from the review',
-      ).save(file: gg.repoPublishConfigFile(repoDir('A')));
+      await gg.RepoPublishConfig(mergeMessage: 'from the review')
+          .save(file: gg.repoPublishConfigFile(repoDir('A')));
 
       final plan = await planner.plan(
         ticketDir: ticketDir,
@@ -532,9 +526,8 @@ void main() {
 
     test('a recorded answer keeps a headless merge-only run going', () async {
       final planner = makePlanner(hasTerminal: false, increments: const []);
-      await gg.RepoPublishConfig(
-        mergeMessage: 'just merge',
-      ).save(file: gg.repoPublishConfigFile(repoDir('A')));
+      await gg.RepoPublishConfig(mergeMessage: 'just merge')
+          .save(file: gg.repoPublishConfigFile(repoDir('A')));
 
       final plan = await planner.plan(
         ticketDir: ticketDir,
@@ -705,9 +698,8 @@ void main() {
         });
 
         if (channel != null) {
-          await gg.PublishState(
-            channel: channel,
-          ).save(file: gg.publishStateFile(repoDir('A')));
+          await gg.PublishState(channel: channel)
+              .save(file: gg.publishStateFile(repoDir('A')));
         }
 
         await makePlanner(
@@ -726,9 +718,9 @@ void main() {
       }
 
       /// Gives repo A a manifest, so its published name is »a«.
-      void manifestOfA(String version) => File(
-        path.join(repoDir('A').path, 'pubspec.yaml'),
-      ).writeAsStringSync('name: a\nversion: $version\n');
+      void manifestOfA(String version) =>
+          File(path.join(repoDir('A').path, 'pubspec.yaml'))
+              .writeAsStringSync('name: a\nversion: $version\n');
 
       test('is the incremented registry version of a publishing '
           'repo', () async {
@@ -819,9 +811,8 @@ void main() {
   // ###########################################################################
   group('an unreadable ticket description', () {
     test('does not crash the seed', () {
-      File(
-        path.join(ticketDir.path, ticketJsonFileName),
-      ).writeAsStringSync(jsonEncode(<String>[]));
+      File(path.join(ticketDir.path, ticketJsonFileName))
+          .writeAsStringSync(jsonEncode(<String>[]));
       expect(PublishPlanner.seedMessageFor(ticketDir: ticketDir), '');
     });
   });

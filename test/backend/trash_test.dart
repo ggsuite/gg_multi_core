@@ -116,9 +116,8 @@ void main() {
         await Trash.moveFromTicket(source: first, ticketDir: ticketDir);
 
         final second = repo('ggsuite', 'gg_multi');
-        File(
-          path.join(second.path, 'pubspec.yaml'),
-        ).writeAsStringSync('name: second');
+        File(path.join(second.path, 'pubspec.yaml'))
+            .writeAsStringSync('name: second');
         final target = await Trash.moveFromTicket(
           source: second,
           ticketDir: ticketDir,
@@ -140,17 +139,15 @@ void main() {
       });
 
       test('a taken file name is suffixed before its extension', () async {
-        File(
-          path.join(ticketDir.path, 'T1.code-workspace'),
-        ).writeAsStringSync('first');
+        File(path.join(ticketDir.path, 'T1.code-workspace'))
+            .writeAsStringSync('first');
         await Trash.moveFromTicket(
           source: File(path.join(ticketDir.path, 'T1.code-workspace')),
           ticketDir: ticketDir,
         );
 
-        File(
-          path.join(ticketDir.path, 'T1.code-workspace'),
-        ).writeAsStringSync('second');
+        File(path.join(ticketDir.path, 'T1.code-workspace'))
+            .writeAsStringSync('second');
         final target = await Trash.moveFromTicket(
           source: File(path.join(ticketDir.path, 'T1.code-workspace')),
           ticketDir: ticketDir,
@@ -165,15 +162,13 @@ void main() {
         final dir = repo('ggsuite', 'gg_multi');
         Directory(path.join(dir.path, 'lib')).createSync();
         File(path.join(dir.path, 'lib', 'a.dart')).writeAsStringSync('a');
-        Link(
-          path.join(dir.path, 'link.dart'),
-        ).createSync(path.join('lib', 'a.dart'));
+        Link(path.join(dir.path, 'link.dart'))
+            .createSync(path.join('lib', 'a.dart'));
 
         final source = MockDirectory();
         when(() => source.path).thenReturn(dir.path);
-        when(
-          () => source.rename(any()),
-        ).thenThrow(const FileSystemException('cross device'));
+        when(() => source.rename(any()))
+            .thenThrow(const FileSystemException('cross device'));
         when(() => source.delete(recursive: true)).thenAnswer((_) async {
           dir.deleteSync(recursive: true);
           return dir;
@@ -200,9 +195,8 @@ void main() {
       Directory oceanRepo(String org, String name) {
         final dir = Directory(path.join(root.path, '.ocean', org, name))
           ..createSync(recursive: true);
-        File(
-          path.join(dir.path, 'pubspec.yaml'),
-        ).writeAsStringSync('name: $name');
+        File(path.join(dir.path, 'pubspec.yaml'))
+            .writeAsStringSync('name: $name');
         return dir;
       }
 
@@ -250,9 +244,8 @@ void main() {
           rootPath: root.path,
         );
         final second = oceanRepo('ggsuite', 'gg_multi');
-        File(
-          path.join(second.path, 'pubspec.yaml'),
-        ).writeAsStringSync('name: second');
+        File(path.join(second.path, 'pubspec.yaml'))
+            .writeAsStringSync('name: second');
 
         final target = await Trash.moveFromOcean(
           source: second,
@@ -270,16 +263,13 @@ void main() {
     group('moveTicketToTrash', () {
       test('moves the whole ticket folder with everything in it', () async {
         repo('ggsuite', 'gg_multi');
-        File(
-          path.join(ticketDir.path, 'ticket.json'),
-        ).writeAsStringSync('{"issue_id":"T1"}');
-        File(
-          path.join(ticketDir.path, 'T1.code-workspace'),
-        ).writeAsStringSync('{}');
+        File(path.join(ticketDir.path, 'ticket.json'))
+            .writeAsStringSync('{"issue_id":"T1"}');
+        File(path.join(ticketDir.path, 'T1.code-workspace'))
+            .writeAsStringSync('{}');
         Directory(path.join(ticketDir.path, '.gg')).createSync();
-        File(
-          path.join(ticketDir.path, '.gg', '.gg.json'),
-        ).writeAsStringSync('{}');
+        File(path.join(ticketDir.path, '.gg', '.gg.json'))
+            .writeAsStringSync('{}');
 
         final target = await Trash.moveTicketToTrash(ticketDir: ticketDir);
 
@@ -316,9 +306,8 @@ void main() {
 
           expect(target.path, path.join(root.path, '.trash', 'T1'));
           expect(
-            Directory(
-              path.join(target.path, 'ggsuite', 'gg_multi'),
-            ).existsSync(),
+            Directory(path.join(target.path, 'ggsuite', 'gg_multi'))
+                .existsSync(),
             isTrue,
           );
         },
@@ -330,9 +319,8 @@ void main() {
           final earlier = Directory(path.join(root.path, '.trash', 'T1'))
             ..createSync(recursive: true);
           File(path.join(earlier.path, 'keep.txt')).writeAsStringSync('keep');
-          File(
-            path.join(ticketDir.path, 'ticket.json'),
-          ).writeAsStringSync('{"issue_id":"second"}');
+          File(path.join(ticketDir.path, 'ticket.json'))
+              .writeAsStringSync('{"issue_id":"second"}');
 
           final target = await Trash.moveTicketToTrash(ticketDir: ticketDir);
 

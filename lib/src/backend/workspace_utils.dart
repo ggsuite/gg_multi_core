@@ -69,9 +69,8 @@ class WorkspaceUtils {
 
       // 2. Is the current folder a ticket, or the root of a legacy workspace
       //    that still groups its tickets in a `tickets` folder? --------------
-      if (Directory(
-        path.join(dir.path, ggMultiLegacyTicketFolder),
-      ).existsSync()) {
+      if (Directory(path.join(dir.path, ggMultiLegacyTicketFolder))
+          .existsSync()) {
         return ocean;
       }
       // A ticket sits directly in the root today, so the root is its parent.
@@ -111,9 +110,8 @@ class WorkspaceUtils {
 
     while (true) {
       if (Directory(path.join(dir.path, ggMultiOceanFolder)).existsSync() ||
-          Directory(
-            path.join(dir.path, ggMultiLegacyMasterFolder),
-          ).existsSync()) {
+          Directory(path.join(dir.path, ggMultiLegacyMasterFolder))
+              .existsSync()) {
         return true;
       }
 

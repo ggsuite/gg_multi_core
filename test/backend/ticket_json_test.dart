@@ -160,9 +160,8 @@ void main() {
       test('fromJsonString ignores unparseable versions', () {
         ggCliVersion = '2.0.0';
         expect(
-          TicketJson.fromJsonString(
-            '{"gg_version": "not-a-version"}',
-          ).ggVersion,
+          TicketJson.fromJsonString('{"gg_version": "not-a-version"}')
+              .ggVersion,
           'not-a-version',
         );
         ggCliVersion = 'broken';
@@ -216,9 +215,8 @@ void main() {
 
     test('uses an empty description when ticket.json lacks the field', () {
       final ticketDir = makeDir('partial_ticket');
-      File(
-        path.join(ticketDir.path, ticketJsonFileName),
-      ).writeAsStringSync('{"issue_id":"x"}');
+      File(path.join(ticketDir.path, ticketJsonFileName))
+          .writeAsStringSync('{"issue_id":"x"}');
       final ticket = buildTicketJson(
         ticketDir: ticketDir,
         repoDirs: const <Directory>[],
@@ -228,9 +226,8 @@ void main() {
 
     test('uses an empty description when ticket.json is malformed', () {
       final ticketDir = makeDir('broken_ticket');
-      File(
-        path.join(ticketDir.path, ticketJsonFileName),
-      ).writeAsStringSync('not json');
+      File(path.join(ticketDir.path, ticketJsonFileName))
+          .writeAsStringSync('not json');
       final ticket = buildTicketJson(
         ticketDir: ticketDir,
         repoDirs: const <Directory>[],
@@ -240,9 +237,8 @@ void main() {
 
     test('uses an empty description when ticket.json is not an object', () {
       final ticketDir = makeDir('array_ticket');
-      File(
-        path.join(ticketDir.path, ticketJsonFileName),
-      ).writeAsStringSync('[1,2]');
+      File(path.join(ticketDir.path, ticketJsonFileName))
+          .writeAsStringSync('[1,2]');
       final ticket = buildTicketJson(
         ticketDir: ticketDir,
         repoDirs: const <Directory>[],
@@ -312,17 +308,15 @@ void main() {
 
     test('returns null when the ticket.json is malformed', () {
       final ticketDir = makeDir('broken');
-      File(
-        path.join(ticketDir.path, ticketJsonFileName),
-      ).writeAsStringSync('{not json');
+      File(path.join(ticketDir.path, ticketJsonFileName))
+          .writeAsStringSync('{not json');
       expect(readTicketJson(ticketDir), isNull);
     });
 
     test('returns null when the ticket.json is not an object', () {
       final ticketDir = makeDir('array');
-      File(
-        path.join(ticketDir.path, ticketJsonFileName),
-      ).writeAsStringSync('[1,2]');
+      File(path.join(ticketDir.path, ticketJsonFileName))
+          .writeAsStringSync('[1,2]');
       expect(readTicketJson(ticketDir), isNull);
     });
 

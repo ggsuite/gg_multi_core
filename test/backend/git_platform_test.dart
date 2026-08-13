@@ -102,12 +102,10 @@ void main() {
 
     test('fetchOrgRepos throws on non-zero exit code', () async {
       final mockRunner = MockProcessRunner();
-      when(
-        () => mockRunner('gh', any()),
-      ).thenAnswer((_) async => ProcessResult(3, 1, '', 'gh error message'));
-      when(
-        () => mockRunner('gh', ['--version']),
-      ).thenAnswer((_) async => ProcessResult(2, 0, 'gh version 2.0.0', ''));
+      when(() => mockRunner('gh', any()))
+          .thenAnswer((_) async => ProcessResult(3, 1, '', 'gh error message'));
+      when(() => mockRunner('gh', ['--version']))
+          .thenAnswer((_) async => ProcessResult(2, 0, 'gh version 2.0.0', ''));
       final platform = GitHubPlatform(processRunner: mockRunner.call);
       await expectLater(
         platform.fetchOrgRepos('myorg'),
@@ -124,9 +122,8 @@ void main() {
 
     test('fetchOrgRepos throws on invalid JSON', () async {
       final mockRunner = MockProcessRunner();
-      when(
-        () => mockRunner('gh', any()),
-      ).thenAnswer((_) async => ProcessResult(3, 0, 'invalid json', ''));
+      when(() => mockRunner('gh', any()))
+          .thenAnswer((_) async => ProcessResult(3, 0, 'invalid json', ''));
       final platform = GitHubPlatform(processRunner: mockRunner.call);
       await expectLater(
         platform.fetchOrgRepos('myorg'),
@@ -142,9 +139,8 @@ void main() {
 
     test('fetchOrgRepos throws when gh is not installed', () async {
       final mockRunner = MockProcessRunner();
-      when(
-        () => mockRunner('gh', ['--version']),
-      ).thenAnswer((_) async => ProcessResult(4, 1, '', 'gh not found'));
+      when(() => mockRunner('gh', ['--version']))
+          .thenAnswer((_) async => ProcessResult(4, 1, '', 'gh not found'));
       final platform = GitHubPlatform(processRunner: mockRunner.call);
       await expectLater(
         platform.fetchOrgRepos('myorg'),
@@ -259,9 +255,8 @@ void main() {
 
     test('fetchOrgRepos throws on non-zero exit code', () async {
       final mockRunner = MockProcessRunner();
-      when(
-        () => mockRunner('az', any()),
-      ).thenAnswer((_) async => ProcessResult(2, 1, '', 'CLI error'));
+      when(() => mockRunner('az', any()))
+          .thenAnswer((_) async => ProcessResult(2, 1, '', 'CLI error'));
       final platform = AzureDevOpsPlatform(processRunner: mockRunner.call);
       await expectLater(
         platform.fetchOrgRepos('myorg', project: 'myproj'),
@@ -271,9 +266,8 @@ void main() {
 
     test('fetchOrgRepos throws on invalid JSON', () async {
       final mockRunner = MockProcessRunner();
-      when(
-        () => mockRunner('az', any()),
-      ).thenAnswer((_) async => ProcessResult(3, 0, 'invalid json', ''));
+      when(() => mockRunner('az', any()))
+          .thenAnswer((_) async => ProcessResult(3, 0, 'invalid json', ''));
       final platform = AzureDevOpsPlatform(processRunner: mockRunner.call);
       await expectLater(
         platform.fetchOrgRepos('myorg', project: 'myproj'),
@@ -284,9 +278,8 @@ void main() {
     test('fetchOrgRepos throws when az is not installed', () async {
       final mockRunner = MockProcessRunner();
       // First call: az --version fails
-      when(
-        () => mockRunner('az', ['--version']),
-      ).thenAnswer((_) async => ProcessResult(4, 1, '', 'az not found'));
+      when(() => mockRunner('az', ['--version']))
+          .thenAnswer((_) async => ProcessResult(4, 1, '', 'az not found'));
       final platform = AzureDevOpsPlatform(processRunner: mockRunner.call);
       await expectLater(
         platform.fetchOrgRepos('myorg', project: 'myproj'),

@@ -156,9 +156,8 @@ void main() {
         path.join(tempRoot.path, ggMultiTrashFolder, ggMultiLegacyMasterFolder),
       ).createSync(recursive: true);
       // A FILE named .trash/.ocean blocks the rename.
-      File(
-        path.join(tempRoot.path, ggMultiTrashFolder, ggMultiOceanFolder),
-      ).writeAsStringSync('');
+      File(path.join(tempRoot.path, ggMultiTrashFolder, ggMultiOceanFolder))
+          .writeAsStringSync('');
 
       final result = migrate();
 
