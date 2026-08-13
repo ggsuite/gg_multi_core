@@ -7,6 +7,7 @@
 library;
 
 export 'src/backend/constants.dart';
+export 'src/backend/duplicate_repo_cleanup.dart';
 export 'src/backend/filesystem_utils.dart';
 export 'src/backend/git_platform.dart';
 export 'src/backend/message_editor_theme.dart';
@@ -17,6 +18,8 @@ export 'src/backend/publish_config_io.dart';
 export 'src/backend/publish_planner.dart';
 export 'src/backend/publish_skip_check.dart';
 export 'src/backend/repo_folder_resolver.dart';
+export 'src/backend/repo_freshness.dart';
+export 'src/backend/repo_identity.dart';
 export 'src/backend/repository.dart';
 export 'src/backend/ticket_cleanup.dart';
 export 'src/backend/ticket_json.dart';

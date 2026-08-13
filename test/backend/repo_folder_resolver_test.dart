@@ -79,6 +79,30 @@ void main() {
         expect(result?.path, dir.path);
       });
 
+      test('matches via the npm name of a repo that also has a pubspec', () {
+        // A dependency written `@tssuite/dna-base` resolves to the folder the
+        // Dart side calls `dna_base` — one repository, two package names.
+        final dir = makeRepo(
+          'dna_base',
+          pubspecName: 'dna_base',
+          packageJsonName: '@tssuite/dna-base',
+        );
+        expect(
+          RepoFolderResolver.resolve(
+            workspacePath: workspace.path,
+            repoName: 'dna-base',
+          )?.path,
+          dir.path,
+        );
+        expect(
+          RepoFolderResolver.resolve(
+            workspacePath: workspace.path,
+            repoName: '@tssuite/dna-base',
+          )?.path,
+          dir.path,
+        );
+      });
+
       test('matches via a scoped package.json name', () {
         final dir = makeRepo(
           'tssuite-ts_foo',
@@ -202,6 +226,54 @@ void main() {
       test('returns null when no manifest is present', () {
         final dir = Directory(path.join(workspace.path, 'x'))..createSync();
         expect(RepoFolderResolver.packageName(dir), isNull);
+      });
+    });
+
+    group('packageNames', () {
+      test('collects the Dart and the npm name of one repo', () {
+        // What `dna_base` looks like: one repository, two package names.
+        final dir = makeRepo(
+          'dna_base',
+          pubspecName: 'dna_base',
+          packageJsonName: '@tssuite/dna-base',
+        );
+        expect(RepoFolderResolver.packageNames(dir), {
+          'dna_base',
+          '@tssuite/dna-base',
+          'dna-base',
+        });
+      });
+
+      test('keeps an unscoped npm name as it is', () {
+        final dir = makeRepo('x', packageJsonName: 'ts_foo');
+        expect(RepoFolderResolver.packageNames(dir), {'ts_foo'});
+      });
+
+      test('is empty when no manifest is present', () {
+        final dir = Directory(path.join(workspace.path, 'x'))..createSync();
+        expect(RepoFolderResolver.packageNames(dir), isEmpty);
+      });
+
+      test('is empty when the pubspec has no name', () {
+        final dir = Directory(path.join(workspace.path, 'x'))..createSync();
+        File(
+          path.join(dir.path, 'pubspec.yaml'),
+        ).writeAsStringSync('version: 1.0.0\n');
+        expect(RepoFolderResolver.packageNames(dir), isEmpty);
+      });
+
+      test('keeps what it read when a manifest is unreadable', () {
+        final dir = makeRepo('x', pubspecName: 'gg_foo');
+        File(
+          path.join(dir.path, 'package.json'),
+        ).writeAsStringSync('{not json');
+        expect(RepoFolderResolver.packageNames(dir), {'gg_foo'});
+      });
+
+      test('is empty when the package.json has no name', () {
+        final dir = Directory(path.join(workspace.path, 'x'))..createSync();
+        File(path.join(dir.path, 'package.json')).writeAsStringSync('{}');
+        expect(RepoFolderResolver.packageNames(dir), isEmpty);
       });
     });
 

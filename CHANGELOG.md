@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.0.0 - 2026-08-13
+
+### Changed
+
+- Report freshness blockers on a dry run and survive a repo without commits
+
 ## 3.1.1 - 2026-08-11
 
 ### Changed
