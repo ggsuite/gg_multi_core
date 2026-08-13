@@ -44,7 +44,7 @@ class RepoFolderResolver {
       }
     }
     for (final dir in dirs) {
-      if (packageName(dir) == repoName) {
+      if (packageNames(dir).contains(repoName)) {
         return dir;
       }
     }
@@ -202,6 +202,48 @@ class RepoFolderResolver {
     if (orgDir.listSync().isEmpty) {
       orgDir.deleteSync();
     }
+  }
+
+  /// Every name the package in [dir] can be referred to by: the Dart package
+  /// name and the npm package name, the latter both with and without its
+  /// scope.
+  ///
+  /// A repository that ships a `pubspec.yaml` *and* a `package.json` is one
+  /// package under two names — `dna_base` to Dart, `@tssuite/dna-base` to npm.
+  /// [packageName] answers with the primary one only, so a dependency written
+  /// the other way round would look like a package nobody owns.
+  static Set<String> packageNames(Directory dir) {
+    final result = <String>{};
+
+    try {
+      final pubspec = File(path.join(dir.path, 'pubspec.yaml'));
+      if (pubspec.existsSync()) {
+        final match = RegExp(
+          r'^name:\s*(\S+)',
+          multiLine: true,
+        ).firstMatch(pubspec.readAsStringSync());
+        final name = match?.group(1);
+        if (name != null) {
+          result.add(name);
+        }
+      }
+
+      final packageJson = File(path.join(dir.path, 'package.json'));
+      if (packageJson.existsSync()) {
+        final json = jsonDecode(packageJson.readAsStringSync());
+        final name = (json as Map<String, dynamic>)['name']?.toString();
+        if (name != null) {
+          result.add(name);
+          if (name.startsWith('@')) {
+            result.add(name.split('/').last);
+          }
+        }
+      }
+    } catch (_) {
+      return result;
+    }
+
+    return result;
   }
 
   /// Package name from pubspec.yaml or package.json (npm scope stripped).
