@@ -89,11 +89,9 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
     Fetch? fetch,
     IsCommitted? isCommitted,
     IsFeatureBranch? isFeatureBranch,
-    UpstreamBranch? upstreamBranch,
   }) : _fetch = fetch ?? Fetch(ggLog: ggLog),
        _isCommitted = isCommitted ?? IsCommitted(ggLog: ggLog),
        _isFeatureBranch = isFeatureBranch ?? IsFeatureBranch(ggLog: ggLog),
-       _upstreamBranch = upstreamBranch ?? UpstreamBranch(ggLog: ggLog),
        super(
          name: 'repo-freshness',
          description:
@@ -117,10 +115,15 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
   ///
   /// Returns null when the repository is on that state afterwards, or the
   /// reason it was left untouched.
+  ///
+  /// With [dryRun] nothing is fetched and nothing is merged; the repository is
+  /// only classified. Every state that holds local work is decided locally, so
+  /// a dry run reports exactly the repositories a real run would stop at.
   @override
   Future<RepoBlocker?> get({
     required GgLog ggLog,
     required Directory directory,
+    bool dryRun = false,
   }) async {
     // A workspace folder counts as a repository as soon as it holds a
     // manifest, so it may well have no git checkout at all. git itself is
@@ -146,13 +149,23 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
       return RepoBlocker.stashedChanges;
     }
 
-    await _fetch.get(ggLog: ggLog, directory: directory);
+    if (!dryRun) {
+      await _fetch.get(ggLog: ggLog, directory: directory);
+    }
 
-    final upstream = await _upstreamBranch.get(
-      ggLog: ggLog,
-      directory: directory,
-    );
-    if (upstream.isEmpty) {
+    // Asked directly rather than through `UpstreamBranch`: a repository
+    // without commits, or one whose remote branch is gone, fails this in ways
+    // that command reports as an error. Here they all mean the same thing —
+    // there is nothing to update from.
+    final upstreamResult = await processWrapper.run('git', [
+      'rev-parse',
+      '--abbrev-ref',
+      '--symbolic-full-name',
+      '@{u}',
+    ], workingDirectory: directory.path);
+
+    final upstream = upstreamResult.stdout.toString().trim();
+    if (upstreamResult.exitCode != 0 || upstream.isEmpty) {
       return RepoBlocker.noUpstream;
     }
 
@@ -172,7 +185,7 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
       return RepoBlocker.unpushedCommits;
     }
 
-    if (behind > 0) {
+    if (behind > 0 && !dryRun) {
       await waitUntilUnlocked(directory: directory, ggLog: ggLog);
       await _git(directory, ['merge', '--ff-only', upstream]);
     }
@@ -187,17 +200,26 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
   ///
   /// Paths are reported relative to [workspacePath] when it is given, so the
   /// report reads `ggsuite/dna_base` instead of an absolute path.
+  ///
+  /// With [dryRun] nothing is changed and nothing is thrown: the repositories
+  /// that would stop a real run are logged instead, so a dry run does not
+  /// promise a run that then aborts.
   Future<void> updateAll({
     required GgLog ggLog,
     required Iterable<Directory> directories,
     String? workspacePath,
     int maxParallel = 4,
+    bool dryRun = false,
   }) async {
     final repos = directories.toList();
     final blockers = List<RepoBlocker?>.filled(repos.length, null);
 
     await _runWithLimit(repos.length, maxParallel, (index) async {
-      blockers[index] = await get(ggLog: ggLog, directory: repos[index]);
+      blockers[index] = await get(
+        ggLog: ggLog,
+        directory: repos[index],
+        dryRun: dryRun,
+      );
     });
 
     final blocked = <String, RepoBlocker>{};
@@ -208,9 +230,16 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
       }
     }
 
-    if (blocked.isNotEmpty) {
-      throw RepoFreshnessException(blocked);
+    if (blocked.isEmpty) {
+      return;
     }
+
+    if (dryRun) {
+      ggLog(RepoFreshnessException(blocked).toString());
+      return;
+    }
+
+    throw RepoFreshnessException(blocked);
   }
 
   // ######################
@@ -220,7 +249,6 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
   final Fetch _fetch;
   final IsCommitted _isCommitted;
   final IsFeatureBranch _isFeatureBranch;
-  final UpstreamBranch _upstreamBranch;
 
   // ...........................................................................
   /// Runs git with [args] in [directory] and returns its trimmed output.

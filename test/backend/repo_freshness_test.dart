@@ -240,6 +240,40 @@ void main() {
         );
       });
 
+      test('a dry run reports the blockers instead of throwing', () async {
+        await updateSampleFileWithoutCommitting(local);
+        final head = await git(local, ['rev-parse', 'HEAD']);
+
+        await repoFreshness.updateAll(
+          ggLog: ggLog,
+          directories: [local],
+          dryRun: true,
+        );
+
+        expect(
+          messages.join('\n'),
+          contains('are not on the state of their remote'),
+        );
+        expect(await git(local, ['rev-parse', 'HEAD']), head);
+      });
+
+      test('a dry run leaves a repository that is behind alone', () async {
+        final other = await cloneOfRemote();
+        addTearDown(() => other.deleteSync(recursive: true));
+        await addAndCommitSampleFile(other, fileName: 'other.txt');
+        await git(other, ['push']);
+
+        final head = await git(local, ['rev-parse', 'HEAD']);
+
+        await repoFreshness.updateAll(
+          ggLog: ggLog,
+          directories: [local],
+          dryRun: true,
+        );
+
+        expect(await git(local, ['rev-parse', 'HEAD']), head);
+      });
+
       test('labels the repositories relative to the workspace', () async {
         await updateSampleFileWithoutCommitting(local);
 
