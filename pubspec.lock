@@ -162,7 +162,7 @@ packages:
     source: hosted
     version: "4.0.0"
   gg_args:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: gg_args
       sha256: "9b7e1d7a235b16c3ce198cac36429f563208f8b6785b297da0aca48102c9fbd5"
@@ -313,7 +313,7 @@ packages:
     source: hosted
     version: "2.4.1"
   gg_process:
-    dependency: transitive
+    dependency: "direct dev"
     description:
       name: gg_process
       sha256: "2e955e598dcd07c6564a7c308cc6a38c18e0fe959ba64dc6c0880674f93c15a6"
