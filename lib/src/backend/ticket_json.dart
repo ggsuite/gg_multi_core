@@ -1,5 +1,5 @@
 // @license
-// Copyright (c) 2025 Göran Hegenberg. All Rights Reserved.
+// Copyright (c) ggsuite
 //
 // Use of this source code is governed by terms that can be
 // found in the LICENSE file in the root of this package.
@@ -182,9 +182,8 @@ void writeTicketJson(Directory ticketDir, TicketJson ticket) {
   if (!ticketDir.existsSync()) {
     ticketDir.createSync(recursive: true);
   }
-  File(
-    path.join(ticketDir.path, ticketJsonFileName),
-  ).writeAsStringSync(ticket.toPrettyJson());
+  File(path.join(ticketDir.path, ticketJsonFileName))
+      .writeAsStringSync(ticket.toPrettyJson());
 }
 
 /// Reads `<ticketDir>/ticket.json`, or returns `null` when the file is missing

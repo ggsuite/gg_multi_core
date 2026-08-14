@@ -1,5 +1,5 @@
 // @license
-// Copyright (c) 2019 - 2025 Dr. Gabriel Gatzsche. All Rights Reserved.
+// Copyright (c) ggsuite
 //
 // Use of this source code is governed by terms that can be
 // found in the LICENSE file in the root of this package.
@@ -102,9 +102,8 @@ void main() {
       final subDir = Directory(path.join(sourceDir.path, 'sub'))..createSync();
       await File(path.join(subDir.path, 'inner.txt')).writeAsString('i');
 
-      await Link(
-        path.join(sourceDir.path, 'file_link.txt'),
-      ).create('target.txt');
+      await Link(path.join(sourceDir.path, 'file_link.txt'))
+          .create('target.txt');
       await Link(path.join(sourceDir.path, 'dir_link')).create('sub');
 
       // Act.
@@ -120,17 +119,15 @@ void main() {
 
       // They resolve inside the destination.
       expect(
-        File(
-          path.join(destinationDir.path, 'file_link.txt'),
-        ).readAsStringSync(),
+        File(path.join(destinationDir.path, 'file_link.txt'))
+            .readAsStringSync(),
         'content',
       );
     });
 
     test('copies a broken symlink instead of dropping it', () async {
-      await Link(
-        path.join(sourceDir.path, 'broken'),
-      ).create('does_not_exist.txt');
+      await Link(path.join(sourceDir.path, 'broken'))
+          .create('does_not_exist.txt');
 
       await copyDirectory(sourceDir, destinationDir);
 

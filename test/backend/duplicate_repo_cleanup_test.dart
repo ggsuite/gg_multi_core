@@ -1,5 +1,5 @@
 // @license
-// Copyright (c) 2019 - 2026 Dr. Gabriel Gatzsche. All Rights Reserved.
+// Copyright (c) ggsuite
 //
 // Use of this source code is governed by terms that can be
 // found in the LICENSE file in the root of this package.
@@ -46,9 +46,8 @@ void main() {
         ? ''
         : 'repository: https://github.com/'
               '${declaredOrg ?? org}/$declaredRepo.git\n';
-    File(
-      path.join(dir.path, 'pubspec.yaml'),
-    ).writeAsStringSync('name: $packageName\nversion: 1.0.0\n$repository');
+    File(path.join(dir.path, 'pubspec.yaml'))
+        .writeAsStringSync('name: $packageName\nversion: 1.0.0\n$repository');
 
     return dir;
   }

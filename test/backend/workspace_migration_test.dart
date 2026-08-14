@@ -1,5 +1,5 @@
 // @license
-// Copyright (c) 2019 - 2025 Dr. Gabriel Gatzsche. All Rights Reserved.
+// Copyright (c) ggsuite
 //
 // Use of this source code is governed by terms that can be
 // found in the LICENSE file in the root of this package.
@@ -39,9 +39,8 @@ void main() {
     );
     if (remoteUrl != null) {
       final gitDir = Directory(path.join(dir.path, '.git'))..createSync();
-      File(
-        path.join(gitDir.path, 'config'),
-      ).writeAsStringSync('[remote "origin"]\n\turl = $remoteUrl\n');
+      File(path.join(gitDir.path, 'config'))
+          .writeAsStringSync('[remote "origin"]\n\turl = $remoteUrl\n');
     }
     return dir;
   }
@@ -84,9 +83,8 @@ void main() {
       migrateToOrgFolders(workspacePath: workspace.path, ggLog: ggLog);
 
       expect(
-        File(
-          path.join(workspace.path, 'ggsuite', 'gg_foo', 'README.md'),
-        ).readAsStringSync(),
+        File(path.join(workspace.path, 'ggsuite', 'gg_foo', 'README.md'))
+            .readAsStringSync(),
         'hello',
       );
     });

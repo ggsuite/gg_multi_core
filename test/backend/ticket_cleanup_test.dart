@@ -1,5 +1,5 @@
 // @license
-// Copyright (c) 2019 - 2025 Dr. Gabriel Gatzsche. All Rights Reserved.
+// Copyright (c) ggsuite
 //
 // Use of this source code is governed by terms that can be
 // found in the LICENSE file in the root of this package.
@@ -56,16 +56,13 @@ void main() {
       final repoA = repo('ggsuite', 'a');
       final repoB = repo('ggsuite', 'b');
       // The ticket's own files must travel with it, not be deleted.
-      File(
-        path.join(ticketDir.path, 'T1.code-workspace'),
-      ).writeAsStringSync('{}');
-      File(
-        path.join(ticketDir.path, 'ticket.json'),
-      ).writeAsStringSync('{"issue_id":"T1"}');
+      File(path.join(ticketDir.path, 'T1.code-workspace'))
+          .writeAsStringSync('{}');
+      File(path.join(ticketDir.path, 'ticket.json'))
+          .writeAsStringSync('{"issue_id":"T1"}');
       Directory(path.join(ticketDir.path, '.gg')).createSync();
-      File(
-        path.join(ticketDir.path, '.gg', '.gg.json'),
-      ).writeAsStringSync('{}');
+      File(path.join(ticketDir.path, '.gg', '.gg.json'))
+          .writeAsStringSync('{}');
       final deletedBranches = <String>[];
 
       await cleanUpTicket(

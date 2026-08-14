@@ -1,5 +1,5 @@
 // @license
-// Copyright (c) 2019 - 2026 Dr. Gabriel Gatzsche. All Rights Reserved.
+// Copyright (c) ggsuite
 //
 // Use of this source code is governed by terms that can be
 // found in the LICENSE file in the root of this package.
@@ -53,9 +53,8 @@ void main() {
     test('prefers the repo files over the ticket-level legacy one', () async {
       final repo = repoDir('A');
       writeTicketLegacy('{"merge_message":"legacy"}');
-      await gg.RepoPublishConfig(
-        mergeMessage: 'own',
-      ).save(file: gg.repoPublishConfigFile(repo));
+      await gg.RepoPublishConfig(mergeMessage: 'own')
+          .save(file: gg.repoPublishConfigFile(repo));
 
       expect(load(repo).config.mergeMessage, 'own');
     });
@@ -90,9 +89,8 @@ void main() {
         'answer', () async {
       final repo = repoDir('A');
       writeTicketLegacy('{"merge_message":"legacy"}');
-      await gg.RepoPublishConfig(
-        versionIncrement: VersionIncrement.major,
-      ).save(file: gg.repoPublishConfigFile(repo));
+      await gg.RepoPublishConfig(versionIncrement: VersionIncrement.major)
+          .save(file: gg.repoPublishConfigFile(repo));
 
       expect(load(repo).config.mergeMessage, isNull);
     });
@@ -103,9 +101,8 @@ void main() {
       // hide the other.
       final repo = repoDir('A');
       writeTicketLegacy('{"merge_message":"legacy","channel":"rc"}');
-      await gg.PublishState(
-        doneSteps: ['merge'],
-      ).save(file: gg.publishStateFile(repo));
+      await gg.PublishState(doneSteps: ['merge'])
+          .save(file: gg.publishStateFile(repo));
 
       expect(load(repo).config.mergeMessage, 'legacy');
       expect(load(repo).state.doneSteps, ['merge']);
@@ -117,9 +114,8 @@ void main() {
     test('own answers keep the legacy run state visible', () async {
       final repo = repoDir('A');
       writeTicketLegacy('{"merge_message":"legacy","channel":"rc"}');
-      await gg.RepoPublishConfig(
-        mergeMessage: 'own',
-      ).save(file: gg.repoPublishConfigFile(repo));
+      await gg.RepoPublishConfig(mergeMessage: 'own')
+          .save(file: gg.repoPublishConfigFile(repo));
 
       expect(load(repo).config.mergeMessage, 'own');
       expect(load(repo).state.channel, 'rc');
@@ -194,9 +190,8 @@ void main() {
 
     test('prefers the ticket state file', () async {
       writeTicketLegacy('{"delete_ticket":true}');
-      await gg.PublishState(
-        deleteTicket: false,
-      ).save(file: gg.publishStateFile(ticketDir));
+      await gg.PublishState(deleteTicket: false)
+          .save(file: gg.publishStateFile(ticketDir));
 
       expect(loadTicketPublishState(ticketDir).deleteTicket, isFalse);
     });
@@ -225,9 +220,8 @@ void main() {
 
     test('is true for a recorded merge message', () async {
       final b = repoDir('B');
-      await gg.RepoPublishConfig(
-        mergeMessage: 'answered',
-      ).save(file: gg.repoPublishConfigFile(b));
+      await gg.RepoPublishConfig(mergeMessage: 'answered')
+          .save(file: gg.repoPublishConfigFile(b));
 
       expect(
         anyRepoHasAnswers(repoDirs: [repoDir('A'), b], ticketDir: ticketDir),
@@ -237,9 +231,8 @@ void main() {
 
     test('is true for a recorded increment alone', () async {
       final a = repoDir('A');
-      await gg.RepoPublishConfig(
-        versionIncrement: VersionIncrement.minor,
-      ).save(file: gg.repoPublishConfigFile(a));
+      await gg.RepoPublishConfig(versionIncrement: VersionIncrement.minor)
+          .save(file: gg.repoPublishConfigFile(a));
 
       expect(anyRepoHasAnswers(repoDirs: [a], ticketDir: ticketDir), isTrue);
     });
@@ -266,9 +259,8 @@ void main() {
 
     test('is true as soon as one repo carries one', () async {
       final b = repoDir('B');
-      await gg.PublishState(
-        status: 'pending',
-      ).save(file: gg.publishStateFile(b));
+      await gg.PublishState(status: 'pending')
+          .save(file: gg.publishStateFile(b));
 
       expect(
         anyRepoHasStatus(repoDirs: [repoDir('A'), b], ticketDir: ticketDir),

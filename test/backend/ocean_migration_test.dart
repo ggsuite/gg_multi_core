@@ -1,5 +1,5 @@
 // @license
-// Copyright (c) 2019 - 2025 Dr. Gabriel Gatzsche. All Rights Reserved.
+// Copyright (c) ggsuite
 //
 // Use of this source code is governed by terms that can be
 // found in the LICENSE file in the root of this package.
@@ -156,9 +156,8 @@ void main() {
         path.join(tempRoot.path, ggMultiTrashFolder, ggMultiLegacyMasterFolder),
       ).createSync(recursive: true);
       // A FILE named .trash/.ocean blocks the rename.
-      File(
-        path.join(tempRoot.path, ggMultiTrashFolder, ggMultiOceanFolder),
-      ).writeAsStringSync('');
+      File(path.join(tempRoot.path, ggMultiTrashFolder, ggMultiOceanFolder))
+          .writeAsStringSync('');
 
       final result = migrate();
 

@@ -1,5 +1,5 @@
 // @license
-// Copyright (c) 2019 - 2025 Dr. Gabriel Gatzsche. All Rights Reserved.
+// Copyright (c) ggsuite
 //
 // Use of this source code is governed by terms that can be
 // found in the LICENSE file in the root of this package.
@@ -65,9 +65,8 @@ void main() {
     await git(dir, ['init', '--initial-branch', defaultBranch]);
     await git(dir, ['config', 'user.email', 'test@example.com']);
     await git(dir, ['config', 'user.name', 'Test']);
-    File(
-      path.join(dir.path, 'pubspec.yaml'),
-    ).writeAsStringSync(pubspecContent ?? 'name: $name\nversion: 1.0.0\n');
+    File(path.join(dir.path, 'pubspec.yaml'))
+        .writeAsStringSync(pubspecContent ?? 'name: $name\nversion: 1.0.0\n');
     await git(dir, ['add', '.']);
     await git(dir, ['commit', '-m', 'Initial commit']);
     return dir;
@@ -104,14 +103,12 @@ void main() {
   }) {
     final dir = Directory(path.join(tempDir.path, name))..createSync();
     if (pubspecContent != null) {
-      File(
-        path.join(dir.path, 'pubspec.yaml'),
-      ).writeAsStringSync(pubspecContent);
+      File(path.join(dir.path, 'pubspec.yaml'))
+          .writeAsStringSync(pubspecContent);
     }
     if (packageJsonContent != null) {
-      File(
-        path.join(dir.path, 'package.json'),
-      ).writeAsStringSync(packageJsonContent);
+      File(path.join(dir.path, 'package.json'))
+          .writeAsStringSync(packageJsonContent);
     }
     return dir;
   }
@@ -659,9 +656,8 @@ void main() {
               '      ref: feat\n',
         );
         Directory(path.join(dir.path, '.gg')).createSync();
-        File(
-          path.join(dir.path, '.gg', '.gg_localize_refs_backup.json'),
-        ).writeAsStringSync('{"a": "^1.0.0"}');
+        File(path.join(dir.path, '.gg', '.gg_localize_refs_backup.json'))
+            .writeAsStringSync('{"a": "^1.0.0"}');
         final repo = node('b', dir);
         repo.dependencies['a'] = node('a', depDir);
 
@@ -693,12 +689,11 @@ void main() {
               '    path: ../a\n',
         );
         Directory(path.join(dir.path, '.gg')).createSync();
-        File(
-          path.join(dir.path, '.gg', '.gg_localize_refs_backup.json'),
-        ).writeAsStringSync(
-          '{"a": {"git": {"url": "https://example.com/a.git"},'
-          ' "version": "^1.0.0"}}',
-        );
+        File(path.join(dir.path, '.gg', '.gg_localize_refs_backup.json'))
+            .writeAsStringSync(
+              '{"a": {"git": {"url": "https://example.com/a.git"},'
+              ' "version": "^1.0.0"}}',
+            );
         final repo = node('b', dir);
         repo.dependencies['a'] = node('a', depDir);
 
@@ -721,11 +716,10 @@ void main() {
               '    path: ../a\n',
         );
         Directory(path.join(dir.path, '.gg')).createSync();
-        File(
-          path.join(dir.path, '.gg', '.gg_localize_refs_backup.json'),
-        ).writeAsStringSync(
-          '{"a": {"git": {"url": "https://example.com/a.git"}}}',
-        );
+        File(path.join(dir.path, '.gg', '.gg_localize_refs_backup.json'))
+            .writeAsStringSync(
+              '{"a": {"git": {"url": "https://example.com/a.git"}}}',
+            );
         final repo = node('b', dir);
         repo.dependencies['a'] = node('a', depDir);
 
@@ -748,9 +742,8 @@ void main() {
               '    path: ../a\n',
         );
         Directory(path.join(dir.path, '.gg')).createSync();
-        File(
-          path.join(dir.path, '.gg', '.gg_localize_refs_backup.json'),
-        ).writeAsStringSync('{"a": ""}');
+        File(path.join(dir.path, '.gg', '.gg_localize_refs_backup.json'))
+            .writeAsStringSync('{"a": ""}');
         final repo = node('b', dir);
         repo.dependencies['a'] = node('a', depDir);
 
@@ -773,9 +766,8 @@ void main() {
               '    path: ../a\n',
         );
         Directory(path.join(dir.path, '.gg')).createSync();
-        File(
-          path.join(dir.path, '.gg', '.gg_localize_refs_backup.json'),
-        ).writeAsStringSync('{"a": 42}');
+        File(path.join(dir.path, '.gg', '.gg_localize_refs_backup.json'))
+            .writeAsStringSync('{"a": 42}');
         final repo = node('b', dir);
         repo.dependencies['a'] = node('a', depDir);
 
@@ -804,9 +796,8 @@ void main() {
               '      ref: feat\n',
         );
         Directory(path.join(dir.path, '.gg')).createSync();
-        File(
-          path.join(dir.path, '.gg', 'gg_localize_refs_backup.json'),
-        ).writeAsStringSync('{"a": "^1.0.0"}');
+        File(path.join(dir.path, '.gg', 'gg_localize_refs_backup.json'))
+            .writeAsStringSync('{"a": "^1.0.0"}');
         final repo = node('b', dir);
         repo.dependencies['a'] = node('a', depDir);
 
@@ -828,9 +819,8 @@ void main() {
               '  a:\n'
               '    path: ../a\n',
         );
-        File(
-          path.join(dir.path, '.gg_localize_refs_backup.json'),
-        ).writeAsStringSync('{"a": "^1.0.0"}');
+        File(path.join(dir.path, '.gg_localize_refs_backup.json'))
+            .writeAsStringSync('{"a": "^1.0.0"}');
         final repo = node('b', dir);
         repo.dependencies['a'] = node('a', depDir);
 
@@ -852,9 +842,8 @@ void main() {
               '  a: ^1.0.0\n',
         );
         Directory(path.join(dir.path, '.gg')).createSync();
-        File(
-          path.join(dir.path, '.gg', '.gg_localize_refs_backup.json'),
-        ).writeAsStringSync('no json');
+        File(path.join(dir.path, '.gg', '.gg_localize_refs_backup.json'))
+            .writeAsStringSync('no json');
         final repo = node('b', dir);
         repo.dependencies['a'] = node('a', depDir);
 
