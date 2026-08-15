@@ -244,10 +244,9 @@ packages:
   gg_lang:
     dependency: "direct main"
     description:
-      name: gg_lang
-      sha256: "087fc18ede77a85fa568dbc6d3e1102e52f1f79eb02f6b9054ec2d0d4bd4623c"
-      url: "https://pub.dev"
-    source: hosted
+      path: "../gg_lang"
+      relative: true
+    source: path
     version: "0.6.0"
   gg_local_package_dependencies:
     dependency: "direct main"
@@ -266,12 +265,11 @@ packages:
     source: hosted
     version: "1.1.0"
   gg_merge:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: gg_merge
-      sha256: a9453efcd4a8f301998c13e21e0790cd48cc4aa6153b7bad30fc12b87c349747
-      url: "https://pub.dev"
-    source: hosted
+      path: "../gg_merge"
+      relative: true
+    source: path
     version: "3.4.0"
   gg_one:
     dependency: "direct main"
@@ -327,10 +325,9 @@ packages:
   gg_publish:
     dependency: "direct main"
     description:
-      name: gg_publish
-      sha256: "85f276912679b210c808b860df32bbaf5853d932143349d5b56ded8cff59a032"
-      url: "https://pub.dev"
-    source: hosted
+      path: "../gg_publish"
+      relative: true
+    source: path
     version: "4.4.0"
   gg_status_printer:
     dependency: "direct dev"
@@ -348,12 +345,11 @@ packages:
     source: path
     version: "3.2.0"
   gg_version:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: gg_version
-      sha256: "306d38bf812159eaca316cffb569ecf3356ff64982fe828b83fbcfc3f5235db1"
-      url: "https://pub.dev"
-    source: hosted
+      path: "../gg_version"
+      relative: true
+    source: path
     version: "5.3.0"
   glob:
     dependency: transitive

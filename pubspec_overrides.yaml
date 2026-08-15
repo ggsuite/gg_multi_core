@@ -16,3 +16,11 @@ dependency_overrides:
     path: ../gg_one_do_publish
   gg_one_merge:
     path: ../gg_one_merge
+  gg_lang:
+    path: ../gg_lang
+  gg_publish:
+    path: ../gg_publish
+  gg_version:
+    path: ../gg_version
+  gg_merge:
+    path: ../gg_merge
