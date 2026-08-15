@@ -51,6 +51,46 @@ void main() {
       path.join(root.path, '.trash', ticket);
 
   group('cleanUpTicket', () {
+    // Regression: a caller inside the ticket folder passes it as a relative
+    // path, and `basename('.')` is '.'. That reached git as
+    // »git push origin --delete .«, which fails with
+    // »fatal: invalid refspec ':.'«.
+    test('derives the branch name from a relative ticket dir', () async {
+      final repoA = repo('ggsuite', 'a');
+      final deletedBranches = <String>[];
+      final cwd = Directory.current;
+
+      try {
+        Directory.current = ticketDir;
+
+        await cleanUpTicket(
+          ticketDir: Directory('.'),
+          repoDirs: [repoA],
+          deleteRemoteBranch: true,
+          ggLog: messages.add,
+          taskLog: taskMessages.add,
+          // Reports the deletion as failed, which keeps the ticket in place.
+          // The move would delete the current directory underneath this
+          // test; the branch name is decided before it either way.
+          processRunner:
+              (
+                String executable,
+                List<String> arguments, {
+                String? workingDirectory,
+                Map<String, String>? environment,
+                bool? runInShell,
+              }) async {
+                deletedBranches.add(arguments.join(' '));
+                return ProcessResult(0, 1, '', 'nope');
+              },
+        );
+      } finally {
+        Directory.current = cwd;
+      }
+
+      expect(deletedBranches, ['push origin --delete T1']);
+    });
+
     test('deletes the remote branches, moves the whole ticket folder to the '
         'trash and prints the cd command in blue', () async {
       final repoA = repo('ggsuite', 'a');
@@ -177,9 +217,10 @@ void main() {
             },
       );
 
+      // Dimmed, not a warning: the branch being gone is the wanted outcome.
       expect(
-        taskMessages.join('\n'),
-        contains('Remote branch T1 for a is already deleted.'),
+        taskMessages,
+        contains(cDetail('Remote branch T1 for a is already deleted.')),
       );
       expect(ticketDir.existsSync(), isFalse);
     });
