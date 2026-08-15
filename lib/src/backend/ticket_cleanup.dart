@@ -44,7 +44,15 @@ Future<void> cleanUpTicket({
   ProcessRunner? processRunner,
 }) async {
   final runner = processRunner ?? defaultProcessRunner;
-  final ticketName = path.basename(ticketDir.path);
+
+  // Normalize before taking the basename. A caller inside the ticket folder
+  // passes it as '.', and `basename('.')` is '.' — which then travelled all
+  // the way into »git push origin --delete .«, failing with
+  // »invalid refspec ':.'«. `normalize` on the absolute path resolves '.',
+  // '..' and trailing separators to the folder's real name. Not
+  // `canonicalize`: it lowercases on Windows, and a branch name is
+  // case-sensitive.
+  final ticketName = path.basename(path.normalize(ticketDir.absolute.path));
 
   // Step 1: Delete the remote branches — per repo, from the repos'
   // original locations. A failed deletion keeps the ticket where it is:
@@ -143,8 +151,10 @@ Future<void> _deleteRemoteBranch({
     // Then there is nothing left to do and nothing to complain about.
     final stderr = '${result.stderr}';
     if (stderr.contains('remote ref does not exist')) {
+      // The wanted state, reached by someone else — a detail, like the
+      // »repo is gone« line above it, not a warning about a problem.
       ggLog(
-        cWarn('Remote branch $branchName for $repoName is already deleted.'),
+        cDetail('Remote branch $branchName for $repoName is already deleted.'),
       );
       return;
     }
