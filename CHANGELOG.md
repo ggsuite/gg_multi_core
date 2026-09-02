@@ -1,10 +1,14 @@
 # Changelog
 
-## Unreleased
+## 4.1.2 - 2026-09-02
 
 ### Changed
 
 - Use ggwsm in pipelines
+
+### Fixed
+
+- Fix Windows-specific test failures that blocked the review
 
 ## 4.1.1 - 2026-08-15
 
