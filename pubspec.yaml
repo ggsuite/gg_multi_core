@@ -13,7 +13,7 @@ dependencies:
   gg_lang: ^0.6.1
   gg_local_package_dependencies: ^4.2.0
   gg_log: ^1.2.0
-  gg_one: ^14.3.0
+  gg_one: ^14.4.0
   gg_publish: ^4.5.0
   http: ^1.6.0
   mocktail: ^1.0.5
