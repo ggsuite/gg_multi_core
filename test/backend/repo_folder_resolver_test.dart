@@ -78,24 +78,24 @@ void main() {
       });
 
       test('matches via the npm name of a repo that also has a pubspec', () {
-        // A dependency written `@tssuite/dna-base` resolves to the folder the
-        // Dart side calls `dna_base` — one repository, two package names.
+        // A dependency written `@ggdna/dna-dart` resolves to the folder the
+        // Dart side calls `dna_dart` — one repository, two package names.
         final dir = makeRepo(
-          'dna_base',
-          pubspecName: 'dna_base',
-          packageJsonName: '@tssuite/dna-base',
+          'dna_dart',
+          pubspecName: 'dna_dart',
+          packageJsonName: '@ggdna/dna-dart',
         );
         expect(
           RepoFolderResolver.resolve(
             workspacePath: workspace.path,
-            repoName: 'dna-base',
+            repoName: 'dna-dart',
           )?.path,
           dir.path,
         );
         expect(
           RepoFolderResolver.resolve(
             workspacePath: workspace.path,
-            repoName: '@tssuite/dna-base',
+            repoName: '@ggdna/dna-dart',
           )?.path,
           dir.path,
         );
@@ -226,16 +226,16 @@ void main() {
 
     group('packageNames', () {
       test('collects the Dart and the npm name of one repo', () {
-        // What `dna_base` looks like: one repository, two package names.
+        // What `dna_dart` looks like: one repository, two package names.
         final dir = makeRepo(
-          'dna_base',
-          pubspecName: 'dna_base',
-          packageJsonName: '@tssuite/dna-base',
+          'dna_dart',
+          pubspecName: 'dna_dart',
+          packageJsonName: '@ggdna/dna-dart',
         );
         expect(RepoFolderResolver.packageNames(dir), {
-          'dna_base',
-          '@tssuite/dna-base',
-          'dna-base',
+          'dna_dart',
+          '@ggdna/dna-dart',
+          'dna-dart',
         });
       });
 

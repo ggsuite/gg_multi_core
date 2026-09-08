@@ -59,19 +59,19 @@ void main() {
   group('DuplicateRepoCleanup', () {
     group('run', () {
       test('keeps the folder the package names as its repository', () async {
-        // What a rename leaves behind: the platform redirects `base_dna`, so
-        // the clone succeeded although the package publishes as `dna_base`.
+        // What a rename leaves behind: the platform redirects `dart_dna`, so
+        // the clone succeeded although the package publishes as `dna_dart`.
         final stale = makeRepo(
           'ggsuite',
-          'base_dna',
-          packageName: 'dna_base',
-          declaredRepo: 'dna_base',
+          'dart_dna',
+          packageName: 'dna_dart',
+          declaredRepo: 'dna_dart',
         );
         final current = makeRepo(
           'ggsuite',
-          'dna_base',
-          packageName: 'dna_base',
-          declaredRepo: 'dna_base',
+          'dna_dart',
+          packageName: 'dna_dart',
+          declaredRepo: 'dna_dart',
         );
 
         final removed = await const DuplicateRepoCleanup().run(
@@ -80,15 +80,15 @@ void main() {
           ggLog: ggLog,
         );
 
-        expect(removed, ['ggsuite/base_dna']);
+        expect(removed, ['ggsuite/dart_dna']);
         expect(stale.existsSync(), isFalse);
         expect(current.existsSync(), isTrue);
-        expect(trashOf('ggsuite', 'base_dna').existsSync(), isTrue);
+        expect(trashOf('ggsuite', 'dart_dna').existsSync(), isTrue);
         expect(
           messages.join('\n'),
-          contains('Moving ggsuite/base_dna to the trash'),
+          contains('Moving ggsuite/dart_dna to the trash'),
         );
-        expect(messages.join('\n'), contains('dna_base under a former name'));
+        expect(messages.join('\n'), contains('dna_dart under a former name'));
       });
 
       test('keeps it no matter which folder comes first', () async {
@@ -120,15 +120,15 @@ void main() {
       test('reports without moving anything on a dry run', () async {
         final stale = makeRepo(
           'ggsuite',
-          'base_dna',
-          packageName: 'dna_base',
-          declaredRepo: 'dna_base',
+          'dart_dna',
+          packageName: 'dna_dart',
+          declaredRepo: 'dna_dart',
         );
         makeRepo(
           'ggsuite',
-          'dna_base',
-          packageName: 'dna_base',
-          declaredRepo: 'dna_base',
+          'dna_dart',
+          packageName: 'dna_dart',
+          declaredRepo: 'dna_dart',
         );
 
         final removed = await const DuplicateRepoCleanup().run(
@@ -138,27 +138,27 @@ void main() {
           dryRun: true,
         );
 
-        expect(removed, ['ggsuite/base_dna']);
+        expect(removed, ['ggsuite/dart_dna']);
         expect(stale.existsSync(), isTrue);
-        expect(trashOf('ggsuite', 'base_dna').existsSync(), isFalse);
+        expect(trashOf('ggsuite', 'dart_dna').existsSync(), isFalse);
         expect(
           messages.join('\n'),
-          contains('Would move ggsuite/base_dna to the trash'),
+          contains('Would move ggsuite/dart_dna to the trash'),
         );
       });
 
       test('drops an organization folder that lost its last repo', () async {
         makeRepo(
           'ggsuite',
-          'dna_base',
-          packageName: 'dna_base',
-          declaredRepo: 'dna_base',
+          'dna_dart',
+          packageName: 'dna_dart',
+          declaredRepo: 'dna_dart',
         );
         makeRepo(
           'former',
-          'base_dna',
-          packageName: 'dna_base',
-          declaredRepo: 'dna_base',
+          'dart_dna',
+          packageName: 'dna_dart',
+          declaredRepo: 'dna_dart',
           declaredOrg: 'ggsuite',
         );
 
@@ -218,9 +218,9 @@ void main() {
       test('leaves a workspace without duplicates alone', () async {
         makeRepo(
           'ggsuite',
-          'dna_base',
-          packageName: 'dna_base',
-          declaredRepo: 'dna_base',
+          'dna_dart',
+          packageName: 'dna_dart',
+          declaredRepo: 'dna_dart',
         );
         makeRepo(
           'ggsuite',

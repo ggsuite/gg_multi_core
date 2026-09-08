@@ -199,7 +199,7 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
   /// local work. A folder with nothing to update from is skipped silently.
   ///
   /// Paths are reported relative to [workspacePath] when it is given, so the
-  /// report reads `ggsuite/dna_base` instead of an absolute path.
+  /// report reads `ggdna/dna_dart` instead of an absolute path.
   ///
   /// With [dryRun] nothing is changed and nothing is thrown: the repositories
   /// that would stop a real run are logged instead, so a dry run does not
