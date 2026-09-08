@@ -50,19 +50,19 @@ void main() {
     group('of', () {
       test('reads the repository a pubspec declares', () {
         final dir = makeRepo(
-          'dna_base',
+          'dna_dart',
           pubspec:
-              'name: dna_base\n'
-              'repository: https://github.com/ggsuite/dna_base.git\n',
+              'name: dna_dart\n'
+              'repository: https://github.com/ggdna/dna_dart.git\n',
         );
 
         final identity = RepoIdentity.of(dir);
 
         expect(identity.directory.path, dir.path);
-        expect(identity.packageNames, {'dna_base'});
-        expect(identity.declaredUrl, 'https://github.com/ggsuite/dna_base.git');
-        expect(identity.declaredIdentity, 'ggsuite/dna_base');
-        expect(identity.declaredRepoName, 'dna_base');
+        expect(identity.packageNames, {'dna_dart'});
+        expect(identity.declaredUrl, 'https://github.com/ggdna/dna_dart.git');
+        expect(identity.declaredIdentity, 'ggdna/dna_dart');
+        expect(identity.declaredRepoName, 'dna_dart');
         expect(identity.sitsInDeclaredRepoFolder, isTrue);
       });
 
@@ -105,36 +105,36 @@ void main() {
 
       test('prefers the pubspec over the package.json', () {
         final dir = makeRepo(
-          'dna_base',
+          'dna_dart',
           pubspec:
-              'name: dna_base\n'
-              'repository: https://github.com/ggsuite/dna_base.git\n',
+              'name: dna_dart\n'
+              'repository: https://github.com/ggdna/dna_dart.git\n',
           packageJson:
-              '{"name":"@tssuite/dna-base",'
+              '{"name":"@ggdna/dna-dart",'
               '"repository":"https://github.com/tssuite/elsewhere.git"}',
         );
 
         final identity = RepoIdentity.of(dir);
 
-        expect(identity.declaredIdentity, 'ggsuite/dna_base');
+        expect(identity.declaredIdentity, 'ggdna/dna_dart');
         expect(identity.packageNames, {
-          'dna_base',
-          '@tssuite/dna-base',
-          'dna-base',
+          'dna_dart',
+          '@ggdna/dna-dart',
+          'dna-dart',
         });
       });
 
       test('reads the git remote', () {
         final dir = makeRepo(
-          'base_dna',
-          pubspec: 'name: dna_base\n',
-          remoteUrl: 'https://github.com/ggsuite/base_dna.git',
+          'dart_dna',
+          pubspec: 'name: dna_dart\n',
+          remoteUrl: 'https://github.com/ggsuite/dart_dna.git',
         );
 
         final identity = RepoIdentity.of(dir);
 
-        expect(identity.remoteUrl, 'https://github.com/ggsuite/base_dna.git');
-        expect(identity.remoteIdentity, 'ggsuite/base_dna');
+        expect(identity.remoteUrl, 'https://github.com/ggsuite/dart_dna.git');
+        expect(identity.remoteIdentity, 'ggsuite/dart_dna');
       });
 
       test('declares nothing when no manifest names a repository', () {
@@ -167,13 +167,13 @@ void main() {
 
     group('sitsInDeclaredRepoFolder', () {
       test('is false for the folder a rename left behind', () {
-        // The platform still redirects `base_dna`, so this clone succeeded —
-        // but the package inside publishes as `dna_base`.
+        // The platform still redirects `dart_dna`, so this clone succeeded —
+        // but the package inside publishes as `dna_dart`.
         final dir = makeRepo(
-          'base_dna',
+          'dart_dna',
           pubspec:
-              'name: dna_base\n'
-              'repository: https://github.com/ggsuite/dna_base.git\n',
+              'name: dna_dart\n'
+              'repository: https://github.com/ggdna/dna_dart.git\n',
         );
 
         expect(RepoIdentity.of(dir).sitsInDeclaredRepoFolder, isFalse);
@@ -183,11 +183,11 @@ void main() {
     group('isSameRepoAs', () {
       test('is true when both declare the same repository', () {
         const pubspec =
-            'name: dna_base\n'
-            'repository: https://github.com/ggsuite/dna_base.git\n';
+            'name: dna_dart\n'
+            'repository: https://github.com/ggdna/dna_dart.git\n';
 
-        final stale = RepoIdentity.of(makeRepo('base_dna', pubspec: pubspec));
-        final current = RepoIdentity.of(makeRepo('dna_base', pubspec: pubspec));
+        final stale = RepoIdentity.of(makeRepo('dart_dna', pubspec: pubspec));
+        final current = RepoIdentity.of(makeRepo('dna_dart', pubspec: pubspec));
 
         expect(stale.isSameRepoAs(current), isTrue);
         expect(current.isSameRepoAs(stale), isTrue);

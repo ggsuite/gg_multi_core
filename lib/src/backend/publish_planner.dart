@@ -519,7 +519,7 @@ class PublishPlanner {
   // ...........................................................................
   /// The names [repoDir] is known under on the registries it publishes to.
   ///
-  /// A hybrid is `base_dna` to its Dart dependents and `@tssuite/base-dna` to
+  /// A hybrid is `dart_dna` to its Dart dependents and `@tssuite/base-dna` to
   /// its npm ones, so each ecosystem's constraint is updated separately. Falls
   /// back to a single entry named after the manifest — or after [fallback],
   /// the repository directory — when no registry is configured: a git-only

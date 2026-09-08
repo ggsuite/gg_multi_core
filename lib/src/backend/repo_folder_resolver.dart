@@ -209,7 +209,7 @@ class RepoFolderResolver {
   /// scope.
   ///
   /// A repository that ships a `pubspec.yaml` *and* a `package.json` is one
-  /// package under two names — `dna_base` to Dart, `@tssuite/dna-base` to npm.
+  /// package under two names — `dna_dart` to Dart, `@ggdna/dna-dart` to npm.
   /// [packageName] answers with the primary one only, so a dependency written
   /// the other way round would look like a package nobody owns.
   static Set<String> packageNames(Directory dir) {
