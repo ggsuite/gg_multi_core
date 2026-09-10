@@ -88,6 +88,23 @@ void main() {
         );
       });
 
+      test('does not report the default branch as feature branch, '
+          'even when it is not called main', () async {
+        // The remote's default branch is develop, and local sits on it.
+        await createBranch(local, 'develop');
+        await git(local, ['push', '--set-upstream', 'origin', 'develop']);
+        await git(local, ['remote', 'set-head', 'origin', 'develop']);
+
+        expect(await repoFreshness.get(ggLog: ggLog, directory: local), isNull);
+
+        // main is a feature branch of that repository now.
+        await git(local, ['checkout', 'main']);
+        expect(
+          await repoFreshness.get(ggLog: ggLog, directory: local),
+          RepoBlocker.featureBranch,
+        );
+      });
+
       test('reports uncommitted changes', () async {
         await updateSampleFileWithoutCommitting(local);
 

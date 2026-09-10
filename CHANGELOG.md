@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- `PublishSkipCheck` resolves the declared default branch before falling back to `main`/`master`
+
+### Fixed
+
+- The ticket hash behind `did review`, `can review` and `did push` ignores the same files as `can commit` (`pubspec.lock`, `.gg/` state files), so an unchanged ticket is not reviewed twice
+
 ## 4.3.0 - 2026-09-10
 
 ### Changed
