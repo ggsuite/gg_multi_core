@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 4.3.0 - 2026-09-10
+
+### Changed
+
+- Register the organization of Azure DevOps web URLs with their _git base path
 
 ### Fixed
 

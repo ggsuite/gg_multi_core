@@ -102,6 +102,63 @@ void main() {
         expect(org?.url, 'https://github.com/foobar-git/');
       });
 
+      group('extracts Azure org from web URLs', () {
+        // Azure rejects `.git` on these, so the base url ends in `_git/` and
+        // the repository is appended by its bare name.
+        test('from the full clone URL', () {
+          const url = 'https://dev.azure.com/xyz-abc/ds_cdm/_git/ds_assembly';
+          final org = OrganizationUtils.extractOrganizationFromUrl(url);
+          expect(org?.name, equals('xyz-abc'));
+          expect(org?.projectName, equals('ds_cdm'));
+          expect(
+            org?.url,
+            equals('https://dev.azure.com/xyz-abc/ds_cdm/_git/'),
+          );
+        });
+
+        test('from the shortcut where project and repo are equal', () {
+          const url = 'https://dev.azure.com/xyz-abc/_git/ds_cdm';
+          final org = OrganizationUtils.extractOrganizationFromUrl(url);
+          expect(org?.name, equals('xyz-abc'));
+          expect(org?.projectName, equals('ds_cdm'));
+          expect(
+            org?.url,
+            equals('https://dev.azure.com/xyz-abc/ds_cdm/_git/'),
+          );
+        });
+
+        test('from the project overview', () {
+          const url = 'https://dev.azure.com/xyz-abc/ds_cdm/';
+          final org = OrganizationUtils.extractOrganizationFromUrl(url);
+          expect(org?.name, equals('xyz-abc'));
+          expect(org?.projectName, equals('ds_cdm'));
+          expect(
+            org?.url,
+            equals('https://dev.azure.com/xyz-abc/ds_cdm/_git/'),
+          );
+        });
+
+        test('from the legacy visualstudio.com host', () {
+          const url =
+              'https://xyz-abc.visualstudio.com/ds_cdm/_git/ds_assembly';
+          final org = OrganizationUtils.extractOrganizationFromUrl(url);
+          expect(org?.name, equals('xyz-abc'));
+          expect(org?.projectName, equals('ds_cdm'));
+          expect(
+            org?.url,
+            equals('https://xyz-abc.visualstudio.com/ds_cdm/_git/'),
+          );
+        });
+
+        test('without a project falls back to the generic form', () {
+          const url = 'https://dev.azure.com/xyz-abc';
+          final org = OrganizationUtils.extractOrganizationFromUrl(url);
+          expect(org?.name, equals('xyz-abc'));
+          expect(org?.projectName, isNull);
+          expect(org?.url, equals('https://dev.azure.com/xyz-abc/'));
+        });
+      });
+
       group('extracts Azure org', () {
         test('from SSH URL full', () {
           const url = 'git@ssh.dev.azure.com:v3/xyz-abc/ds_cdm/ds_assembly.git';
