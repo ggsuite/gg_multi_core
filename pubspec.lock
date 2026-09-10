@@ -373,34 +373,34 @@ packages:
     dependency: transitive
     description:
       name: gg_one_commit
-      sha256: "36ea5465566ba7e0a8826cbc6e6687f985854cdfa8808ecc070bd2c1666ffc88"
+      sha256: "18262445dbebcf4450db9f6204ecfde2976fc6fc9bec7705fba0abe3959cadf2"
       url: "https://pub.dev"
     source: hosted
-    version: "2.4.0"
+    version: "2.4.1"
   gg_one_core:
     dependency: transitive
     description:
       name: gg_one_core
-      sha256: "1fb18e3fc1666711ff0b439d86d319e4595932c11192a3236c5ff915aa33f26b"
+      sha256: "3fbd6d71faccb5958670b671e09d40b449d230313bbb67034c1d7674059d7484"
       url: "https://pub.dev"
     source: hosted
-    version: "2.6.0"
+    version: "2.6.1"
   gg_one_do_publish:
     dependency: transitive
     description:
       name: gg_one_do_publish
-      sha256: "1d4e0b2a50bab70006b09535470b07bb630c90044366074af9930ce0313eb7dc"
+      sha256: d3f3c3ab49aa7a35b17a6cacfa6e73ff23b13bacd056885a7d5efd213d7344fd
       url: "https://pub.dev"
     source: hosted
-    version: "2.7.0"
+    version: "2.7.1"
   gg_one_merge:
     dependency: transitive
     description:
       name: gg_one_merge
-      sha256: "9f1dca0e01f93a1422cf6d2f57c16640476b0eaf83326fc38006be0904708102"
+      sha256: "4541c378002c9828a0a262724fa168c22f96743c0e96b8e8e03ca17e403b5036"
       url: "https://pub.dev"
     source: hosted
-    version: "2.6.0"
+    version: "2.6.1"
   gg_process:
     dependency: "direct dev"
     description:
@@ -421,10 +421,10 @@ packages:
     dependency: "direct main"
     description:
       name: gg_publish
-      sha256: "735205431f612bdb8b3d9843990d55c319f43fe2f2629d551de94e8e1556a07c"
+      sha256: f9410b8ae30f448e4df2c5ed444704d998d55590d1bbc2a0eaf37ebcf705b823
       url: "https://pub.dev"
     source: hosted
-    version: "4.5.0"
+    version: "4.6.0"
   gg_status_printer:
     dependency: "direct dev"
     description:
@@ -461,10 +461,10 @@ packages:
     dependency: "direct dev"
     description:
       name: helix
-      sha256: ee828b3ba233fc965c1f8b39307ea1e1483641da09b3fd10b1426864688172a0
+      sha256: "21f84973cf4c18ca001aea45cb33fe8aa1d0e17270aedf300cedd6cc9ec92078"
       url: "https://pub.dev"
     source: hosted
-    version: "1.5.1"
+    version: "1.7.1"
   http:
     dependency: "direct main"
     description:
