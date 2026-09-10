@@ -10,6 +10,7 @@ import 'dart:io';
 import 'package:path/path.dart' as path;
 
 import 'package:gg_multi_core/src/backend/organization.dart';
+import 'package:gg_multi_core/src/backend/url_parser.dart';
 
 /// A utility class to manage organizations
 /// associated with the ocean. Caches entries in a buffer.
@@ -154,7 +155,15 @@ class OrganizationUtils {
         );
       }
     }
-    // 3. GitHub SSH: git@github.com:org/repo.git
+    // 3. Azure DevOps web URLs — what the browser hands out:
+    //    https://dev.azure.com/<org>/<project>/_git/<repo>
+    //    https://dev.azure.com/<org>/_git/<repo>       (project named like repo)
+    //    https://<org>.visualstudio.com/<project>/_git/<repo>
+    final azureWeb = _azureWebOrganization(cleanedUrl);
+    if (azureWeb != null) {
+      return azureWeb;
+    }
+    // 4. GitHub SSH: git@github.com:org/repo.git
     final sshRegex = RegExp(r'^git@[^:]+:([^/]+)/[^/]+(?:\.git)?');
     final sshMatch = sshRegex.firstMatch(url);
     if (sshMatch != null) {
@@ -164,7 +173,7 @@ class OrganizationUtils {
         return Organization(name: orgName, url: baseUrl);
       }
     }
-    // 4. GitHub HTTPS or generic: https://github.com/org/[repo]...
+    // 5. GitHub HTTPS or generic: https://github.com/org/[repo]...
     try {
       final uri = Uri.parse(cleanedUrl);
 
@@ -180,6 +189,34 @@ class OrganizationUtils {
       // Ignore parse errors
     }
     return null; // Not a recognized format
+  }
+
+  /// The organization an Azure DevOps web URL names, or null when [url] is
+  /// not one or does not say which project it means.
+  ///
+  /// Azure rejects a `.git` suffix on these URLs — it reads `repo.git` as the
+  /// name of a repository that does not exist — so the base url keeps the
+  /// `_git` folder and a repository is appended by its bare name.
+  static Organization? _azureWebOrganization(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.scheme.startsWith('http')) {
+      return null;
+    }
+    final host = uri.host.toLowerCase();
+    final isLegacyHost = host.endsWith('.visualstudio.com');
+    if (host != 'dev.azure.com' && !isLegacyHost) {
+      return null;
+    }
+    final parsed = const UrlParser().parse(url);
+    final org = parsed.org;
+    final project = parsed.project;
+    if (org == null || project == null || !_isValidOrgName(org)) {
+      return null;
+    }
+    final baseUrl = isLegacyHost
+        ? 'https://$host/$project/_git/'
+        : 'https://dev.azure.com/$org/$project/_git/';
+    return Organization(name: org, url: baseUrl, projectName: project);
   }
 
   /// Returns true if name is valid organization name: [a-z0-9_-] only.
