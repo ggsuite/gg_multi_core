@@ -446,12 +446,21 @@ class PublishSkipCheck {
   // ...........................................................................
   /// The main branch the repository is compared against.
   ///
-  /// `origin/<main>` first — it is what everybody else sees — with the local
+  /// The branch the remote declares as its default (`origin/HEAD`) comes
+  /// first — a repository releasing from `develop` is compared against
+  /// `develop`, not against a `main` it may still carry. Then
+  /// `origin/<main>` — it is what everybody else sees — with the local
   /// branch as fallback for a repository whose remote is unreachable. Null
-  /// when neither exists, which counts as undecidable and therefore
-  /// publishes.
+  /// when none exists, which counts as undecidable and therefore publishes.
   Future<String?> _mainRef(Directory repoDir) async {
-    const candidates = ['origin/main', 'origin/master', 'main', 'master'];
+    final declared = await _declaredDefaultBranch(repoDir);
+    final candidates = [
+      if (declared != null) ...['origin/$declared', declared],
+      'origin/main',
+      'origin/master',
+      'main',
+      'master',
+    ];
     for (final candidate in candidates) {
       final sha = await _runGit(
         <String>['rev-parse', '--verify', '--quiet', candidate],
@@ -463,6 +472,26 @@ class PublishSkipCheck {
       }
     }
     return null;
+  }
+
+  /// The branch `refs/remotes/origin/HEAD` points at, or null when the
+  /// remote declares no default branch.
+  Future<String?> _declaredDefaultBranch(Directory repoDir) async {
+    final target = await _runGit(
+      <String>[
+        'symbolic-ref',
+        '--quiet',
+        '--short',
+        'refs/remotes/origin/HEAD',
+      ],
+      repoDir: repoDir,
+      allowFailure: true,
+    );
+    const prefix = 'origin/';
+    if (!target.startsWith(prefix) || target.length == prefix.length) {
+      return null;
+    }
+    return target.substring(prefix.length);
   }
 
   /// The last commit that folded a released main branch back into this

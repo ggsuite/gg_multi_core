@@ -357,6 +357,59 @@ void main() {
         expect(decision.skip, isTrue);
       });
 
+      test('compares against the branch the remote declares as default, '
+          'even when it is neither main nor master', () async {
+        final dir = await createRepo('a', defaultBranch: 'develop');
+        // Simulate a fetched remote whose HEAD points at develop.
+        await git(dir, [
+          'update-ref',
+          'refs/remotes/origin/develop',
+          'develop',
+        ]);
+        await git(dir, [
+          'symbolic-ref',
+          'refs/remotes/origin/HEAD',
+          'refs/remotes/origin/develop',
+        ]);
+        await git(dir, ['checkout', '-b', 'feat']);
+        await commitFile(
+          dir,
+          'pubspec_overrides.yaml',
+          'refs',
+          '#gg: changed references to git',
+        );
+
+        final decision = await check.get(repo: node('a', dir), refVersions: {});
+        expect(decision.skip, isTrue);
+      });
+
+      test(
+        'ignores a declared default branch the remote no longer has',
+        () async {
+          final dir = await createRepo('a');
+          await git(dir, ['update-ref', 'refs/remotes/origin/main', 'main']);
+          // A stale origin/HEAD left behind after the remote moved to main.
+          await git(dir, [
+            'symbolic-ref',
+            'refs/remotes/origin/HEAD',
+            'refs/remotes/origin/develop',
+          ]);
+          await git(dir, ['checkout', '-b', 'feat']);
+          await commitFile(
+            dir,
+            'pubspec_overrides.yaml',
+            'refs',
+            '#gg: changed references to git',
+          );
+
+          final decision = await check.get(
+            repo: node('a', dir),
+            refVersions: {},
+          );
+          expect(decision.skip, isTrue);
+        },
+      );
+
       test('publishes when neither main nor master exists', () async {
         final dir = await createRepo('a', defaultBranch: 'trunk');
 

@@ -10,6 +10,7 @@ import 'dart:io';
 import 'package:gg_git/gg_git.dart';
 import 'package:gg_local_package_dependencies/gg_local_package_dependencies.dart';
 import 'package:gg_log/gg_log.dart';
+import 'package:gg_one/gg_one.dart' show GgState;
 import 'package:mocktail/mocktail.dart';
 import 'package:path/path.dart' as path;
 
@@ -29,12 +30,18 @@ class TicketState {
 
   /// Files that are excluded from the per-repo hash so that updating
   /// generated/state files does not invalidate the cache.
-  static const List<String> ignoreFiles = <String>[
-    '.gg/',
-    '.gg.json',
-    '.gg/.gg.json',
-    'CHANGELOG.md',
-  ];
+  ///
+  /// Exactly the files `gg can commit` leaves out of its own hash
+  /// ([GgState.ignoreFiles]): the `.gg/` state files and the lock files.
+  /// A ticket state has to survive what a repo state survives — the
+  /// `.gg/gg.json` a `can commit` rewrites, or the `pubspec.lock` the Dart
+  /// VS Code extension regenerates whenever a manifest is written. Both used
+  /// to be part of this hash, so a ticket that was reviewed already was
+  /// reviewed again — pushed, planned, pull requests and all — although
+  /// nothing anybody wrote had changed.
+  static final List<String> ignoreFiles = List<String>.unmodifiable(
+    GgState.ignoreFiles,
+  );
 
   /// Returns the aggregated 64-bit hash that summarizes the state of all
   /// repositories inside the ticket.

@@ -10,6 +10,7 @@ import 'dart:io';
 import 'package:gg_git/gg_git.dart';
 import 'package:gg_local_package_dependencies/gg_local_package_dependencies.dart';
 import 'package:gg_multi_core/src/backend/ticket_state.dart';
+import 'package:gg_one/gg_one.dart' show GgState;
 import 'package:mocktail/mocktail.dart';
 import 'package:path/path.dart' as path;
 import 'package:pubspec_parse/pubspec_parse.dart';
@@ -68,6 +69,17 @@ void main() {
   group('TicketState', () {
     test('uses a default LastChangesHash when none is injected', () {
       expect(() => TicketState(ggLog: messages.add), returnsNormally);
+    });
+
+    test('ignores exactly the files gg can commit ignores', () {
+      // A lock file rewritten by a background pub get, or a .gg/gg.json a
+      // can commit rewrote, must not invalidate a review.
+      expect(TicketState.ignoreFiles, GgState.ignoreFiles);
+      expect(TicketState.ignoreFiles, contains('pubspec.lock'));
+      expect(TicketState.ignoreFiles, contains('.gg/gg.json'));
+      expect(TicketState.ignoreFiles, contains('.gg/'));
+      expect(TicketState.ignoreFiles, contains('CHANGELOG.md'));
+      expect(() => TicketState.ignoreFiles.add('x'), throwsUnsupportedError);
     });
 
     group('currentHash', () {
