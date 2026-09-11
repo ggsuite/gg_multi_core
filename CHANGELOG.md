@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `gg do rm ticket` prints the `cd` hint for the workspace root of a flat `<root>/<ticket>` ticket instead of the folder above it
+
 ## 4.4.0 - 2026-09-11
 
 ### Changed
