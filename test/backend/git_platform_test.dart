@@ -207,7 +207,7 @@ void main() {
     test('buildRepoUrl returns correct URL with project', () {
       final platform = AzureDevOpsPlatform();
       final url = platform.buildRepoUrl('myorg', 'myrepo', 'myproj');
-      expect(url, 'https://ssh.dev.azure.com:v3/myorg/myproj/myrepo.git');
+      expect(url, 'git@ssh.dev.azure.com:v3/myorg/myproj/myrepo');
     });
 
     test('buildRepoUrl throws without project', () {
@@ -302,7 +302,7 @@ void main() {
       );
       expect(org?.name, 'myorg');
       expect(org?.projectName, 'myproj');
-      expect(org?.url, 'https://ssh.dev.azure.com:v3/myorg/myproj/');
+      expect(org?.url, 'git@ssh.dev.azure.com:v3/myorg/myproj/');
     });
 
     test('extractOrgFromUrl returns null for non-Azure URL', () {
@@ -316,13 +316,13 @@ void main() {
     test('buildBaseUrl returns correct base with project', () {
       final platform = AzureDevOpsPlatform();
       final base = platform.buildBaseUrl('myorg', 'myproj');
-      expect(base, 'https://ssh.dev.azure.com:v3/myorg/myproj/');
+      expect(base, 'git@ssh.dev.azure.com:v3/myorg/myproj/');
     });
 
     test('buildBaseUrl returns correct base without project', () {
       final platform = AzureDevOpsPlatform();
       final base = platform.buildBaseUrl('myorg');
-      expect(base, 'https://ssh.dev.azure.com:v3/myorg/');
+      expect(base, 'git@ssh.dev.azure.com:v3/myorg/');
     });
 
     test(

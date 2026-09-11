@@ -165,10 +165,7 @@ void main() {
           final org = OrganizationUtils.extractOrganizationFromUrl(url);
           expect(org?.name, equals('xyz-abc'));
           expect(org?.projectName, equals('ds_cdm'));
-          expect(
-            org?.url,
-            equals('https://ssh.dev.azure.com:v3/xyz-abc/ds_cdm/'),
-          );
+          expect(org?.url, equals('git@ssh.dev.azure.com:v3/xyz-abc/ds_cdm/'));
         });
 
         test('from HTTPS URL (full, .git)', () {
@@ -177,10 +174,7 @@ void main() {
           final org = OrganizationUtils.extractOrganizationFromUrl(url);
           expect(org?.name, equals('xyz-abc'));
           expect(org?.projectName, equals('ds_cdm'));
-          expect(
-            org?.url,
-            equals('https://ssh.dev.azure.com:v3/xyz-abc/ds_cdm/'),
-          );
+          expect(org?.url, equals('git@ssh.dev.azure.com:v3/xyz-abc/ds_cdm/'));
         });
 
         test('from HTTPS URL (full, no .git, trailing "/")', () {
@@ -189,10 +183,7 @@ void main() {
           final org = OrganizationUtils.extractOrganizationFromUrl(url);
           expect(org?.name, equals('xyz-abc'));
           expect(org?.projectName, equals('ds_cdm'));
-          expect(
-            org?.url,
-            equals('https://ssh.dev.azure.com:v3/xyz-abc/ds_cdm/'),
-          );
+          expect(org?.url, equals('git@ssh.dev.azure.com:v3/xyz-abc/ds_cdm/'));
         });
 
         test('from HTTPS URL for just project (no repo, ends with "/")', () {
@@ -200,10 +191,7 @@ void main() {
           final org = OrganizationUtils.extractOrganizationFromUrl(url);
           expect(org?.name, equals('xyz-abc'));
           expect(org?.projectName, equals('ds_cdm'));
-          expect(
-            org?.url,
-            equals('https://ssh.dev.azure.com:v3/xyz-abc/ds_cdm/'),
-          );
+          expect(org?.url, equals('git@ssh.dev.azure.com:v3/xyz-abc/ds_cdm/'));
         });
 
         test('from HTTPS project URL, no trailing /', () {
@@ -211,10 +199,7 @@ void main() {
           final org = OrganizationUtils.extractOrganizationFromUrl(url);
           expect(org?.name, equals('xyz-abc'));
           expect(org?.projectName, equals('ds_cdm'));
-          expect(
-            org?.url,
-            equals('https://ssh.dev.azure.com:v3/xyz-abc/ds_cdm/'),
-          );
+          expect(org?.url, equals('git@ssh.dev.azure.com:v3/xyz-abc/ds_cdm/'));
         });
 
         test('from HTTPS project URL, trailing #', () {
@@ -222,10 +207,7 @@ void main() {
           final org = OrganizationUtils.extractOrganizationFromUrl(url);
           expect(org?.name, equals('xyz-abc'));
           expect(org?.projectName, equals('ds_cdm'));
-          expect(
-            org?.url,
-            equals('https://ssh.dev.azure.com:v3/xyz-abc/ds_cdm/'),
-          );
+          expect(org?.url, equals('git@ssh.dev.azure.com:v3/xyz-abc/ds_cdm/'));
         });
       });
     });
@@ -327,7 +309,7 @@ void main() {
         const org = 'myorg';
         const project = 'myproj';
         final base = OrganizationUtils.buildBaseUrl(url, org, project);
-        expect(base, equals('https://ssh.dev.azure.com:v3/myorg/myproj/'));
+        expect(base, equals('git@ssh.dev.azure.com:v3/myorg/myproj/'));
       });
 
       test('returns correct Azure HTTP URL for org base with project', () {
@@ -335,13 +317,13 @@ void main() {
         const org = 'myorg';
         const project = 'myproj';
         final base = OrganizationUtils.buildBaseUrl(url, org, project);
-        expect(base, equals('https://ssh.dev.azure.com:v3/myorg/myproj/'));
+        expect(base, equals('git@ssh.dev.azure.com:v3/myorg/myproj/'));
       });
       test('returns correct Azure HTTP for org base without project', () {
         const url = 'https://ssh.dev.azure.com:v3/myorg/';
         const org = 'myorg';
         final base = OrganizationUtils.buildBaseUrl(url, org);
-        expect(base, equals('https://ssh.dev.azure.com:v3/myorg/'));
+        expect(base, equals('git@ssh.dev.azure.com:v3/myorg/'));
       });
     });
 
