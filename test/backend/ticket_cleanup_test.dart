@@ -157,6 +157,30 @@ void main() {
       expect(messages.last, cCmd('  cd ${root.absolute.path}'));
     });
 
+    // Regression: the root was taken as the grandparent of the ticket
+    // folder, which is right for the legacy `<root>/tickets/<ticket>` only.
+    // A flat `<root>/<ticket>` printed »cd« one folder above the workspace.
+    test('prints the cd command for a flat <root>/<ticket> layout', () async {
+      ticketDir = Directory(path.join(root.path, 'T2'))..createSync();
+      final repoA = repo('ggsuite', 'a');
+
+      await cleanUpTicket(
+        ticketDir: ticketDir,
+        repoDirs: [repoA],
+        deleteRemoteBranch: true,
+        ggLog: messages.add,
+        taskLog: taskMessages.add,
+        processRunner: okRunner,
+      );
+
+      expect(ticketDir.existsSync(), isFalse);
+      expect(
+        Directory(path.join(trashPath('T2'), 'ggsuite', 'a')).existsSync(),
+        isTrue,
+      );
+      expect(messages.last, cCmd('  cd ${root.absolute.path}'));
+    });
+
     test(
       'keeps the remote branches when deleteRemoteBranch is false',
       () async {
