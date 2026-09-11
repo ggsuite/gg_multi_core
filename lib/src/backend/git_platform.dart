@@ -145,7 +145,9 @@ class AzureDevOpsPlatform implements GitPlatform {
     if (project == null) {
       throw ArgumentError('Project name is required for Azure DevOps.');
     }
-    return 'https://ssh.dev.azure.com:v3/$org/$project/$repo.git';
+    // The SSH form is the only one of this host git can open, and Azure
+    // rejects a `.git` suffix.
+    return 'git@ssh.dev.azure.com:v3/$org/$project/$repo';
   }
 
   @override
@@ -226,7 +228,7 @@ class AzureDevOpsPlatform implements GitPlatform {
   @override
   String buildBaseUrl(String org, [String? project]) {
     return project != null
-        ? 'https://ssh.dev.azure.com:v3/$org/$project/'
-        : 'https://ssh.dev.azure.com:v3/$org/';
+        ? 'git@ssh.dev.azure.com:v3/$org/$project/'
+        : 'git@ssh.dev.azure.com:v3/$org/';
   }
 }

@@ -225,12 +225,15 @@ class OrganizationUtils {
 
   /// Builds the base URL for an organization
   static String buildBaseUrl(String repoUrl, String org, [String? project]) {
-    // Azure DevOps specific
+    // Azure DevOps specific. Of the `ssh.dev.azure.com` host only the SSH
+    // form is something git can open — `https://ssh.dev.azure.com:v3/…` is
+    // no URL, `v3` is not a port. A repository is appended by its bare name,
+    // Azure rejects a `.git` suffix.
     if (repoUrl.contains('ssh.dev.azure.com')) {
       if (project != null) {
-        return 'https://ssh.dev.azure.com:v3/$org/$project/';
+        return 'git@ssh.dev.azure.com:v3/$org/$project/';
       } else {
-        return 'https://ssh.dev.azure.com:v3/$org/';
+        return 'git@ssh.dev.azure.com:v3/$org/';
       }
     }
     if (repoUrl.startsWith('git@')) {
