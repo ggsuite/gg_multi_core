@@ -1,12 +1,13 @@
 # Changelog
 
-## Unreleased
+## 4.5.1 - 2026-09-11
 
 ### Fixed
 
 - `gg do upgrade ocean` refreshes `origin/HEAD` after the fetch, so a default branch renamed on the server is picked up
 - `gg do rm ticket` prints the `cd` hint for the workspace root of a flat `<root>/<ticket>` ticket instead of the folder above it
 - Remove a stray `coverage:ignore-end` marker from `ticket_cleanup.dart` that broke `format_coverage --check-ignore` in dependent packages
+
 ## 4.5.0 - 2026-09-11
 
 ### Changed
