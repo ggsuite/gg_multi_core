@@ -171,5 +171,3 @@ Future<void> _deleteRemoteBranch({
 
   ggLog(cDetail('Deleted remote branch $branchName for $repoName.'));
 }
-
-// coverage:ignore-end
