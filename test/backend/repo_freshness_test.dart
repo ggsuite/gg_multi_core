@@ -79,6 +79,22 @@ void main() {
         expect(File(path.join(local.path, 'other.txt')).existsSync(), isTrue);
       });
 
+      test('refreshes origin/HEAD from the remote after the fetch', () async {
+        // The clone recorded main as the default; the server moved on.
+        await git(local, ['remote', 'set-head', 'origin', 'main']);
+        final other = await cloneOfRemote();
+        await git(other, ['checkout', '-b', 'develop']);
+        await git(other, ['push', '--set-upstream', 'origin', 'develop']);
+        await git(remote, ['symbolic-ref', 'HEAD', 'refs/heads/develop']);
+        other.deleteSync(recursive: true);
+
+        expect(await repoFreshness.get(ggLog: ggLog, directory: local), isNull);
+        expect(
+          await git(local, ['symbolic-ref', 'refs/remotes/origin/HEAD']),
+          'refs/remotes/origin/develop',
+        );
+      });
+
       test('reports a feature branch', () async {
         await createBranch(local, 'feature');
 
@@ -93,6 +109,7 @@ void main() {
         // The remote's default branch is develop, and local sits on it.
         await createBranch(local, 'develop');
         await git(local, ['push', '--set-upstream', 'origin', 'develop']);
+        await git(remote, ['symbolic-ref', 'HEAD', 'refs/heads/develop']);
         await git(local, ['remote', 'set-head', 'origin', 'develop']);
 
         expect(await repoFreshness.get(ggLog: ggLog, directory: local), isNull);

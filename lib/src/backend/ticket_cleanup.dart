@@ -11,6 +11,7 @@ import 'package:gg_log/gg_log.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:gg_multi_core/src/backend/trash.dart';
+import 'package:gg_multi_core/src/backend/workspace_utils.dart';
 import 'package:gg_git/gg_git.dart';
 
 /// Closes a finished ticket: deletes the remote feature branches, then
@@ -102,9 +103,10 @@ Future<void> cleanUpTicket({
     return;
   }
 
-  // The workspace root is the grandparent of `<root>/tickets/<ticket>` —
-  // resolved before the move, while the path still exists.
-  final workspaceRoot = ticketDir.absolute.parent.parent.path;
+  // The workspace root the ticket belongs to — `<root>/<ticket>`, or the
+  // legacy `<root>/tickets/<ticket>` — resolved before the move, while the
+  // path still exists.
+  final workspaceRoot = WorkspaceUtils.rootOfTicket(ticketDir.absolute);
 
   // Step 2: Move the whole folder in one go — everything the ticket holds
   // travels with it.
@@ -169,5 +171,3 @@ Future<void> _deleteRemoteBranch({
 
   ggLog(cDetail('Deleted remote branch $branchName for $repoName.'));
 }
-
-// coverage:ignore-end
