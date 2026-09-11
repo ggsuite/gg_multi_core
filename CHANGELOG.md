@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.5.0 - 2026-09-11
+
+### Changed
+
+- Build clone urls of Azure DevOps organizations in the SSH form git can open
+
 ## 4.4.0 - 2026-09-11
 
 ### Changed
