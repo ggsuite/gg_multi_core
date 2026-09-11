@@ -151,6 +151,7 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
 
     if (!dryRun) {
       await _fetch.get(ggLog: ggLog, directory: directory);
+      await _refreshOriginHead(directory);
     }
 
     // Asked directly rather than through `UpstreamBranch`: a repository
@@ -252,6 +253,22 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
 
   // ...........................................................................
   /// Runs git with [args] in [directory] and returns its trimmed output.
+  /// `git fetch` leaves `origin/HEAD` as the clone recorded it, so a
+  /// repository whose default branch was renamed on the server keeps pointing
+  /// at the old name — and the new default would pass as a feature branch on
+  /// the next run. `set-head --auto` asks the remote for the current one. It
+  /// is not allowed to fail the update: the fetch just before reached the
+  /// remote, and a remote that cannot answer this leaves things as they are.
+  Future<void> _refreshOriginHead(Directory directory) async {
+    await processWrapper.run('git', [
+      'remote',
+      'set-head',
+      'origin',
+      '--auto',
+    ], workingDirectory: directory.path);
+  }
+
+  // ...........................................................................
   Future<String> _git(Directory directory, List<String> args) async {
     final result = await processWrapper.run(
       'git',
