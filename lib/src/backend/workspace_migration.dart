@@ -11,6 +11,7 @@ import 'package:gg_log/gg_log.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:gg_multi_core/src/backend/repo_folder_resolver.dart';
+import 'package:gg_multi_core/src/backend/workspace_utils.dart';
 
 /// Moves every repository that still sits directly in [workspacePath] into a
 /// folder named after the organization of its git remote
@@ -156,7 +157,7 @@ List<Directory> _flatRepos(String workspacePath) {
   }
   return <Directory>[
     for (final dir in workspace.listSync().whereType<Directory>())
-      if (!path.basename(dir.path).startsWith('.') &&
+      if (!WorkspaceUtils.isHiddenName(path.basename(dir.path)) &&
           RepoFolderResolver.isRepoDir(dir))
         dir,
   ]..sort((a, b) => a.path.compareTo(b.path));
