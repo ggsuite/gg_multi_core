@@ -5,11 +5,16 @@
 ### Added
 
 - `WorkspaceUtils.isHiddenName` and `WorkspaceUtils.existingTicketDir`, which resolves a ticket name to a real ticket only — never to a hidden folder such as `.github` or a plain folder such as `doc`
+- `WorkspaceUtils.ticketNameError`, `isValidTicketName` and `normalizeTicketName`: the one check for ticket names — a single folder name that is not empty, no path (no `/` or `\`, not absolute), not hidden and not `tickets` in any case — and the removal of one trailing separator (`T1/` from tab completion); `existingTicketDir` returns `null` for every other name
+- `WorkspaceUtils.newTicketDir`, the one place a ticket folder is created: it throws when the name is invalid, when the ticket exists, or when `<root>/<name>` or the legacy `<root>/tickets/<name>` is taken by something that is no ticket, takes an empty folder as it is and creates the folder non-recursively
 
 ### Fixed
 
 - Hidden folders are never tickets: `WorkspaceUtils.isTicketDir` rejects `.github`, `.claude`, `.dart_tool` and every closed ticket in `.trash` (`<ticket>`, `<ticket> (2)`, …), even with a `ticket.json`; a ticket in a workspace root with a hidden name (`~/.ws/<ticket>`) stays a ticket
 - `defaultOceanWorkspacePath`, `defaultGgMultiWorkspacePath` and `isInsideExistingWorkspace` walk past the `.trash` folder, so a command run in `<root>/.trash/…` resolves `<root>/.ocean` instead of `<root>/.trash/.ocean`, and a `.master` in the trash is no longer migrated as a workspace of its own
+- `defaultOceanWorkspacePath` resolves `<root>/.ocean` from inside a legacy `<root>/tickets/<ticket>` that holds a `ticket.json` instead of `<root>/tickets/.ocean`, and climbs a relative `workingDir` such as `.` from its absolute path instead of stopping at `./.ocean`
+- `.trash` and `tickets` are recognized in any case: a closed ticket in `.Trash/<ticket>` is no active ticket, `Tickets/<ticket>` is a legacy ticket
+- `existingTicketDir` no longer resolves an empty or absolute name to the legacy `tickets` folder or to an arbitrary folder, because `path.join` drops the root in front of an absolute name
 
 ## 4.5.1 - 2026-09-11
 

@@ -132,6 +132,71 @@ void main() {
       expect(messages, isEmpty);
     });
 
+    test('resolves the ocean of the workspace root from a legacy ticket that '
+        'holds a ticket.json, in any case of the tickets folder', () async {
+      for (final legacyFolder in <String>[
+        ggMultiLegacyTicketFolder,
+        ggMultiLegacyTicketFolder.toUpperCase(),
+      ]) {
+        // Arrange -------------------------------------------------------------
+        final root = Directory(path.join(tempRoot.path, 'root_$legacyFolder'))
+          ..createSync();
+        final ticket = makeTicket(
+          Directory(path.join(root.path, legacyFolder)),
+          'L1',
+        );
+        final repo = Directory(path.join(ticket.path, 'repo'))..createSync();
+
+        // Act + Assert --------------------------------------------------------
+        expect(
+          WorkspaceUtils.defaultOceanWorkspacePath(workingDir: repo.path),
+          path.join(root.path, ggMultiOceanFolder),
+          reason: legacyFolder,
+        );
+      }
+    });
+
+    test('climbs from a relative working dir such as .', () async {
+      // Arrange ---------------------------------------------------------------
+      Directory(path.join(tempRoot.path, ggMultiOceanFolder)).createSync();
+      final trash = Directory(path.join(tempRoot.path, ggMultiTrashFolder));
+      Directory(path.join(trash.path, ggMultiOceanFolder))
+          .createSync(recursive: true);
+      final cwd = Directory.current;
+
+      try {
+        Directory.current = trash;
+        // The cwd as the process sees it, links resolved.
+        final root = path.dirname(Directory.current.path);
+
+        // Act + Assert --------------------------------------------------------
+        expect(
+          WorkspaceUtils.defaultOceanWorkspacePath(workingDir: '.'),
+          path.join(root, ggMultiOceanFolder),
+        );
+      } finally {
+        Directory.current = cwd;
+      }
+    });
+
+    test('walks past a trash folder spelled in another case', () async {
+      // Arrange ---------------------------------------------------------------
+      Directory(path.join(tempRoot.path, ggMultiOceanFolder)).createSync();
+      final trash = Directory(
+        path.join(tempRoot.path, ggMultiTrashFolder.toUpperCase()),
+      );
+      Directory(path.join(trash.path, ggMultiOceanFolder))
+          .createSync(recursive: true);
+      final repo = Directory(path.join(makeTicket(trash, 'T1').path, 'repo'))
+        ..createSync();
+
+      // Act + Assert ----------------------------------------------------------
+      expect(
+        WorkspaceUtils.defaultOceanWorkspacePath(workingDir: repo.path),
+        path.join(tempRoot.path, ggMultiOceanFolder),
+      );
+    });
+
     test('renames a legacy .master and returns the .ocean path', () async {
       // Arrange ---------------------------------------------------------------
       final legacyDir = Directory(
@@ -381,6 +446,18 @@ void main() {
       );
     });
 
+    test('does not count the .ocean of a trash spelled in another '
+        'case', () async {
+      final trash = Directory(
+        path.join(tempRoot.path, 'root', ggMultiTrashFolder.toUpperCase()),
+      );
+      Directory(path.join(trash.path, ggMultiOceanFolder))
+          .createSync(recursive: true);
+      final inTrash = Directory(path.join(trash.path, 'T1'))..createSync();
+
+      expect(WorkspaceUtils.isInsideExistingWorkspace(inTrash.path), isFalse);
+    });
+
     test('does not count the .ocean or .master of the trash', () async {
       // Arrange ------------------------------------------------------------
       final root = Directory(path.join(tempRoot.path, 'root'));
@@ -414,12 +491,23 @@ void main() {
 
     test('returns ticket directory when found', () async {
       // Create /tmp/XYZ/tickets/T1
-      final ticketsDir = Directory(path.join(tempRoot.path, 'tickets'));
+      final ticketsDir = Directory(
+        path.join(tempRoot.path, ggMultiLegacyTicketFolder),
+      );
       final ticketDir = Directory(path.join(ticketsDir.path, 'T1'));
       await ticketDir.create(recursive: true);
       // The input should be a subdir inside ticketsDir
       final result = WorkspaceUtils.detectTicketPath(ticketDir.path);
       expect(result, ticketDir.path);
+    });
+
+    test('finds a legacy ticket in a tickets folder of any case', () async {
+      final ticketDir = Directory(
+        path.join(tempRoot.path, ggMultiLegacyTicketFolder.toUpperCase(), 'L1'),
+      );
+      final sub = Directory(path.join(ticketDir.path, 'sub'))
+        ..createSync(recursive: true);
+      expect(WorkspaceUtils.detectTicketPath(sub.path), ticketDir.path);
     });
 
     test('returns null when no ticket folder exists', () async {
@@ -515,6 +603,13 @@ void main() {
     });
 
     group('isTicketDir', () {
+      test('is false for a closed ticket in a trash of any case', () {
+        final trash = Directory(
+          path.join(tempRoot.path, ggMultiTrashFolder.toUpperCase()),
+        );
+        expect(WorkspaceUtils.isTicketDir(makeTicket(trash, 'T1')), isFalse);
+      });
+
       test('is true exactly for a folder holding a ticket.json', () {
         expect(WorkspaceUtils.isTicketDir(makeTicket(tempRoot, 'T1')), isTrue);
         final plain = Directory(path.join(tempRoot.path, 'plain'))
@@ -584,7 +679,7 @@ void main() {
 
     group('isHiddenName', () {
       test('is true exactly for names starting with a dot', () {
-        for (final name in <String>['.github', '.trash', '.', '..']) {
+        for (final name in <String>['.github', ggMultiTrashFolder, '.', '..']) {
           expect(WorkspaceUtils.isHiddenName(name), isTrue, reason: name);
         }
         for (final name in <String>['T1', 'a.b', 'doc']) {
@@ -630,12 +725,15 @@ void main() {
       test('is null for hidden folders, even with a ticket.json', () {
         Directory(path.join(tempRoot.path, ggMultiOceanFolder)).createSync();
         makeTicket(tempRoot, '.github');
-        makeTicket(Directory(path.join(tempRoot.path, '.trash')), 'T1');
+        makeTicket(
+          Directory(path.join(tempRoot.path, ggMultiTrashFolder)),
+          'T1',
+        );
         Directory(path.join(legacyRoot().path, '.foo')).createSync();
         for (final name in <String>[
           '.github',
           '.ocean',
-          '.trash',
+          ggMultiTrashFolder,
           '.foo',
           '.',
           '..',
@@ -679,6 +777,222 @@ void main() {
       });
     });
 
+    group('ticket names', () {
+      test('ticketNameError accepts one visible folder name', () {
+        for (final name in <String>['T1', 'GGS-145', 'feat_x', 'a.b', ' T1']) {
+          expect(WorkspaceUtils.ticketNameError(name), isNull, reason: name);
+          expect(WorkspaceUtils.isValidTicketName(name), isTrue, reason: name);
+        }
+      });
+
+      test('ticketNameError names why a name is no ticket name', () {
+        final legacyUpper = ggMultiLegacyTicketFolder.toUpperCase();
+        final expected = <String, String>{
+          '': 'A ticket name must not be empty.',
+          '   ': 'A ticket name must not be empty.',
+          'a/b': 'The ticket name "a/b" is a path',
+          r'a\b': r'The ticket name "a\b" is a path',
+          tempRoot.path: 'The ticket name "${tempRoot.path}" is a path',
+          '.github':
+              '".github" starts with a dot, but hidden folders are never '
+              'tickets.',
+          '.': '"." starts with a dot',
+          '..': '".." starts with a dot',
+          ggMultiLegacyTicketFolder:
+              '"$ggMultiLegacyTicketFolder" is reserved for the folder older '
+              'gg versions kept their tickets in.',
+          legacyUpper: '"$legacyUpper" is reserved',
+        };
+        for (final MapEntry(key: name, value: reason) in expected.entries) {
+          expect(
+            WorkspaceUtils.ticketNameError(name),
+            contains(reason),
+            reason: name,
+          );
+          expect(WorkspaceUtils.isValidTicketName(name), isFalse, reason: name);
+        }
+      });
+
+      test('normalizeTicketName drops exactly one trailing separator', () {
+        final expected = <String, String>{
+          'T1/': 'T1',
+          r'T1\': 'T1',
+          'T1//': 'T1/',
+          'T1': 'T1',
+          '/': '/',
+          r'\': r'\',
+          '': '',
+        };
+        for (final MapEntry(key: name, value: normalized) in expected.entries) {
+          expect(
+            WorkspaceUtils.normalizeTicketName(name),
+            normalized,
+            reason: name,
+          );
+        }
+      });
+
+      test('existingTicketDir resolves no invalid name — not to the legacy '
+          'tickets folder, the root or any folder an absolute name '
+          'addresses', () {
+        final legacyRoot = Directory(
+          path.join(tempRoot.path, ggMultiLegacyTicketFolder),
+        )..createSync();
+        makeTicket(legacyRoot, 'T1');
+        final elsewhere = makeTicket(tempRoot, 'elsewhere');
+
+        for (final name in <String>[
+          '',
+          '  ',
+          elsewhere.path,
+          tempRoot.path,
+          path.join(ggMultiLegacyTicketFolder, 'T1'),
+          ggMultiLegacyTicketFolder,
+          ggMultiLegacyTicketFolder.toUpperCase(),
+        ]) {
+          expect(
+            WorkspaceUtils.existingTicketDir(
+              rootPath: tempRoot.path,
+              ticketName: name,
+            ),
+            isNull,
+            reason: name,
+          );
+        }
+      });
+
+      test('existingTicketDir takes only a real directory in the legacy '
+          'folder', () {
+        final legacyRoot = Directory(
+          path.join(tempRoot.path, ggMultiLegacyTicketFolder),
+        )..createSync();
+        File(path.join(legacyRoot.path, 'F1')).writeAsStringSync('');
+        expect(
+          WorkspaceUtils.existingTicketDir(
+            rootPath: tempRoot.path,
+            ticketName: 'F1',
+          ),
+          isNull,
+        );
+      });
+    });
+
+    group('newTicketDir', () {
+      Directory create(String name, {String? relativeTo}) =>
+          WorkspaceUtils.newTicketDir(
+            rootPath: tempRoot.path,
+            ticketName: name,
+            relativeTo: relativeTo,
+          );
+
+      Matcher throwsWith(String message) => throwsA(
+        isA<Exception>().having(
+          (e) => e.toString(),
+          'message',
+          contains(message),
+        ),
+      );
+
+      test('creates the folder directly in the workspace root', () {
+        final dir = create('T1');
+        expect(dir.path, path.join(tempRoot.path, 'T1'));
+        expect(dir.existsSync(), isTrue);
+        expect(dir.listSync(), isEmpty);
+      });
+
+      test('takes an empty folder as it is', () {
+        final prepared = Directory(path.join(tempRoot.path, 'T1'))
+          ..createSync();
+        expect(create('T1').path, prepared.path);
+      });
+
+      test('throws for a name that is no ticket name and creates nothing', () {
+        expect(() => create(''), throwsWith('must not be empty'));
+        expect(() => create(tempRoot.path), throwsWith('is a path'));
+        expect(() => create('.github'), throwsWith('starts with a dot'));
+        expect(
+          () => create(ggMultiLegacyTicketFolder),
+          throwsWith('is reserved'),
+        );
+        expect(tempRoot.listSync(), isEmpty);
+      });
+
+      test('throws for an existing ticket, in the root or legacy', () {
+        makeTicket(tempRoot, 'T1');
+        final legacyRoot = Directory(
+          path.join(tempRoot.path, ggMultiLegacyTicketFolder),
+        )..createSync();
+        Directory(path.join(legacyRoot.path, 'L1')).createSync();
+
+        expect(
+          () => create('T1'),
+          throwsWith(
+            'Ticket T1 already exists at ${path.join(tempRoot.path, 'T1')}.',
+          ),
+        );
+        expect(
+          () => create('T1', relativeTo: tempRoot.path),
+          throwsWith('Ticket T1 already exists at T1.'),
+        );
+        expect(
+          () => create('L1', relativeTo: tempRoot.path),
+          throwsWith(
+            'Ticket L1 already exists at '
+            '${path.join(ggMultiLegacyTicketFolder, 'L1')}.',
+          ),
+        );
+      });
+
+      test('throws for a place taken by something that is no ticket and '
+          'leaves it untouched', () {
+        final doc = Directory(path.join(tempRoot.path, 'doc'))..createSync();
+        File(path.join(doc.path, 'guide.md')).writeAsStringSync('# Guide');
+        final license = File(path.join(tempRoot.path, 'LICENSE'))
+          ..writeAsStringSync('license text');
+        final target = Directory(path.join(tempRoot.path, 'target'))
+          ..createSync();
+        Link(path.join(tempRoot.path, 'lnk')).createSync(target.path);
+        final legacyRoot = Directory(
+          path.join(tempRoot.path, ggMultiLegacyTicketFolder),
+        )..createSync();
+        File(path.join(legacyRoot.path, 'F1')).writeAsStringSync('');
+
+        final expected = <String, String>{
+          'doc': 'doc',
+          'LICENSE': 'LICENSE',
+          'lnk': 'lnk',
+          'F1': path.join(ggMultiLegacyTicketFolder, 'F1'),
+        };
+        for (final MapEntry(key: name, value: shown) in expected.entries) {
+          expect(
+            () => create(name, relativeTo: tempRoot.path),
+            throwsWith(
+              '$shown already exists and is no ticket. '
+              'Choose another ticket name.',
+            ),
+            reason: name,
+          );
+        }
+
+        expect(
+          File(path.join(doc.path, ticketJsonFileName)).existsSync(),
+          isFalse,
+        );
+        expect(license.readAsStringSync(), 'license text');
+        expect(target.listSync(), isEmpty);
+      });
+
+      test('rethrows when the workspace root does not exist', () {
+        expect(
+          () => WorkspaceUtils.newTicketDir(
+            rootPath: path.join(tempRoot.path, 'nowhere'),
+            ticketName: 'T1',
+          ),
+          throwsA(isA<FileSystemException>()),
+        );
+      });
+    });
+
     group('rootOfTicket', () {
       test('is the parent of a ticket in the root', () {
         final ticket = makeTicket(tempRoot, 'T1');
@@ -688,6 +1002,14 @@ void main() {
       test('skips the legacy tickets folder', () {
         final legacyRoot = Directory(
           path.join(tempRoot.path, ggMultiLegacyTicketFolder),
+        )..createSync();
+        final ticket = makeTicket(legacyRoot, 'T1');
+        expect(WorkspaceUtils.rootOfTicket(ticket), tempRoot.path);
+      });
+
+      test('skips a legacy tickets folder of any case', () {
+        final legacyRoot = Directory(
+          path.join(tempRoot.path, ggMultiLegacyTicketFolder.toUpperCase()),
         )..createSync();
         final ticket = makeTicket(legacyRoot, 'T1');
         expect(WorkspaceUtils.rootOfTicket(ticket), tempRoot.path);

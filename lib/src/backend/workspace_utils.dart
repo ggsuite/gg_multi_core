@@ -6,6 +6,7 @@
 
 import 'dart:io';
 
+import 'package:gg_console_colors/gg_console_colors.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:gg_multi_core/src/backend/constants.dart';
@@ -27,10 +28,13 @@ class WorkspaceUtils {
   ///    the »auto-rename at the next start«: every command resolves this path
   ///    before it runs. When the rename is not possible, the legacy path is
   ///    returned for this run and the next start retries.
-  /// 2. If the **examined** folder holds a ticket — either a `ticket.json` of
-  ///    its own or a legacy `tickets` directory — its parent is considered
-  ///    the project root and the path `<root>/.ocean` is returned (even if
-  ///    the directory does not yet exist).
+  /// 2. If the **examined** folder holds a legacy `tickets` folder, it is the
+  ///    root of an older workspace and `<folder>/.ocean` is returned. If the
+  ///    examined folder is a ticket itself ([isTicketDir]), the `.ocean` of
+  ///    the workspace root it belongs to ([rootOfTicket]) is returned — the
+  ///    parent of `<root>/<ticket>`, the grandparent of a legacy
+  ///    `<root>/tickets/<ticket>`. Both paths are returned even if the
+  ///    directory does not yet exist.
   ///
   ///    The trash folder `.trash` is never a workspace root: it holds a
   ///    `.ocean` of its own for the repositories gg removed from the ocean,
@@ -43,6 +47,9 @@ class WorkspaceUtils {
   ///    preserved so that tests that have been written with mixed path
   ///    separators (e.g. forward slashes on Windows) still pass.
   ///
+  /// The walk itself runs over the absolute, normalized [workingDir], so a
+  /// relative one such as `.` climbs the real folders above it as well.
+  ///
   /// This logic makes it possible to execute the binary from
   /// * inside the ocean,
   /// * inside a ticket workspace, or
@@ -53,7 +60,7 @@ class WorkspaceUtils {
     workingDir ??= Directory.current.path;
     // coverage:ignore-end
 
-    var dir = Directory(workingDir);
+    var dir = Directory(_absolute(workingDir));
 
     while (true) {
       final ocean = path.join(dir.path, ggMultiOceanFolder);
@@ -74,16 +81,14 @@ class WorkspaceUtils {
           return legacy;
         }
 
-        // 2. Is the current folder a ticket, or the root of a legacy
-        //    workspace that still groups its tickets in a `tickets` folder?
+        // 2. Is the current folder the root of a legacy workspace that still
+        //    groups its tickets in a `tickets` folder, or a ticket? ---------
         if (Directory(path.join(dir.path, ggMultiLegacyTicketFolder))
             .existsSync()) {
           return ocean;
         }
-        // A ticket sits directly in the root today, so the root is its
-        // parent.
         if (isTicketDir(dir)) {
-          return path.join(dir.parent.path, ggMultiOceanFolder);
+          return path.join(rootOfTicket(dir), ggMultiOceanFolder);
         }
       }
 
@@ -121,7 +126,7 @@ class WorkspaceUtils {
   /// A pure predicate: it never renames anything, it only answers whether a
   /// workspace already exists here.
   static bool isInsideExistingWorkspace(String directoryPath) {
-    var dir = Directory(directoryPath).absolute;
+    var dir = Directory(_absolute(directoryPath));
 
     while (true) {
       if (!_isTrash(dir) &&
@@ -179,9 +184,10 @@ class WorkspaceUtils {
   /// `.github`, `.claude` or `.dart_tool` a DNA instantiates in the workspace
   /// root, or the `.gg` folder of a repository that still carries a legacy
   /// marker. Neither is a closed ticket in `<root>/.trash/<ticket>` (or
-  /// `<ticket> (2)`, …): it keeps its `ticket.json` but is no active ticket
-  /// any more. Only the folder's own name and the trash count — a workspace
-  /// root with a hidden name (`~/.ws/<ticket>`) holds tickets like any other.
+  /// `<ticket> (2)`, …, and in a `.Trash` spelled differently): it keeps its
+  /// `ticket.json` but is no active ticket any more. Only the folder's own
+  /// name and the trash count — a workspace root with a hidden name
+  /// (`~/.ws/<ticket>`) holds tickets like any other.
   static bool isTicketDir(Directory directory) =>
       !_isHiddenOrInTrash(directory) &&
       File(path.join(directory.path, ticketJsonFileName)).existsSync();
@@ -191,11 +197,51 @@ class WorkspaceUtils {
   /// created under such a name either.
   static bool isHiddenName(String name) => name.startsWith('.');
 
+  /// Returns [name] without one trailing separator, the way a shell's tab
+  /// completion appends it to a folder (`T1/`). Only one is removed, so a
+  /// name that is a path stays one for [ticketNameError].
+  static String normalizeTicketName(String name) =>
+      name.length > 1 && (name.endsWith('/') || name.endsWith(r'\'))
+      ? name.substring(0, name.length - 1)
+      : name;
+
+  /// Returns why [name] cannot name a ticket, or `null` when it can.
+  ///
+  /// A ticket is named by exactly one visible folder name of the workspace
+  /// root: not empty, no path (no `/` or `\`, not absolute), not hidden and
+  /// not `tickets` — in whatever case —, the folder older gg versions kept
+  /// their tickets in. The check comes before a name is joined to a path:
+  /// `path.join(root, name)` drops `root` in front of an absolute name, and
+  /// an empty name addresses the folder itself.
+  ///
+  /// Apply [normalizeTicketName] first to names a user typed.
+  static String? ticketNameError(String name) {
+    if (name.trim().isEmpty) {
+      return 'A ticket name must not be empty.';
+    }
+    if (name.contains('/') || name.contains(r'\') || path.isAbsolute(name)) {
+      return 'The ticket name "$name" is a path, but a ticket is named by a '
+          'single folder name.';
+    }
+    if (isHiddenName(name)) {
+      return 'The ticket name "$name" starts with a dot, but hidden folders '
+          'are never tickets.';
+    }
+    if (_isLegacyTicketFolderName(name)) {
+      return 'The ticket name "$name" is reserved for the folder older gg '
+          'versions kept their tickets in.';
+    }
+    return null;
+  }
+
+  /// Returns `true` when [name] can name a ticket ([ticketNameError]).
+  static bool isValidTicketName(String name) => ticketNameError(name) == null;
+
   /// Returns the workspace root a ticket at [ticketDir] belongs to: its
   /// parent, or its grandparent for a legacy `<root>/tickets/<ticket>`.
   static String rootOfTicket(Directory ticketDir) {
     final parent = ticketDir.parent;
-    return path.basename(parent.path) == ggMultiLegacyTicketFolder
+    return _isLegacyTicketFolderName(path.basename(parent.path))
         ? parent.parent.path
         : parent.path;
   }
@@ -204,8 +250,9 @@ class WorkspaceUtils {
   /// [rootPath] — `<root>/<ticket>`, or the legacy `<root>/tickets/<ticket>`
   /// when only that one exists.
   ///
-  /// The returned directory does not have to exist; callers that create a
-  /// ticket use it as the place to create it in.
+  /// The returned directory does not have to exist and is not checked to be
+  /// a ticket: use [existingTicketDir] to act on a ticket and [newTicketDir]
+  /// to create one.
   static Directory ticketDir({
     required String rootPath,
     required String ticketName,
@@ -225,16 +272,17 @@ class WorkspaceUtils {
   /// — or `null` when there is no such ticket.
   ///
   /// Unlike [ticketDir] the result is always a real ticket, never just a
-  /// folder of that name: `<root>/<ticket>` has to be a ticket
-  /// ([isTicketDir]), so neither a hidden folder (`.github`, `.trash`, `.`)
-  /// nor a plain one (the `doc` or `dna` folder a DNA instantiates in the
-  /// root) is taken for one. A legacy folder counts by its place, as it does
-  /// for [detectTicketPath]. Commands that act on a named ticket use this.
+  /// folder of that name: a name that is no ticket name ([ticketNameError]:
+  /// empty, a path, hidden, `tickets`) resolves to nothing, `<root>/<ticket>`
+  /// has to be a ticket ([isTicketDir]), so a plain folder (the `doc` or `dna`
+  /// folder a DNA instantiates in the root) is none, and a legacy one has to
+  /// be a real directory — it counts by its place, as it does for
+  /// [detectTicketPath]. Commands that act on a named ticket use this.
   static Directory? existingTicketDir({
     required String rootPath,
     required String ticketName,
   }) {
-    if (isHiddenName(ticketName)) {
+    if (!isValidTicketName(ticketName)) {
       return null;
     }
     final dir = Directory(path.join(rootPath, ticketName));
@@ -244,7 +292,86 @@ class WorkspaceUtils {
     final legacy = Directory(
       path.join(rootPath, ggMultiLegacyTicketFolder, ticketName),
     );
-    return legacy.existsSync() ? legacy : null;
+    return _typeOf(legacy.path) == FileSystemEntityType.directory
+        ? legacy
+        : null;
+  }
+
+  /// Creates the folder of the new ticket [ticketName] directly in the
+  /// workspace [rootPath] and returns it.
+  ///
+  /// This is the one place a ticket folder comes into being. It throws an
+  /// [Exception] naming the reason instead when
+  /// * [ticketName] is no ticket name ([ticketNameError]),
+  /// * a ticket of that name exists already ([existingTicketDir]), or
+  /// * `<root>/<ticket>` — or the legacy `<root>/tickets/<ticket>` — is
+  ///   already taken by something that is no ticket: the `doc` folder of the
+  ///   DNA, a file, a link, a folder of the user.
+  ///
+  /// An empty real folder is taken as it is: it holds nothing to take over,
+  /// and it is what an attempt that failed half-way — or a user preparing
+  /// the folder — leaves behind. The folder is created non-recursively; when
+  /// that fails because something got in the way, the same »is no ticket«
+  /// message is thrown. Paths in the messages are shown relative to
+  /// [relativeTo] when it is given.
+  static Directory newTicketDir({
+    required String rootPath,
+    required String ticketName,
+    String? relativeTo,
+  }) {
+    final nameError = ticketNameError(ticketName);
+    if (nameError != null) {
+      throw Exception(cError(nameError));
+    }
+
+    String shown(String folderPath) => relativeTo == null
+        ? folderPath
+        : path.relative(folderPath, from: relativeTo);
+
+    Exception noTicket(String folderPath) => Exception(
+      cError(
+        '${shown(folderPath)} already exists and is no ticket. '
+        'Choose another ticket name.',
+      ),
+    );
+
+    final existing = existingTicketDir(
+      rootPath: rootPath,
+      ticketName: ticketName,
+    );
+    if (existing != null) {
+      throw Exception(
+        cError('Ticket $ticketName already exists at ${shown(existing.path)}.'),
+      );
+    }
+
+    final legacy = path.join(rootPath, ggMultiLegacyTicketFolder, ticketName);
+    if (_typeOf(legacy) != FileSystemEntityType.notFound) {
+      throw noTicket(legacy);
+    }
+
+    final dir = Directory(path.join(rootPath, ticketName));
+    final type = _typeOf(dir.path);
+    if (type == FileSystemEntityType.directory) {
+      if (dir.listSync().isEmpty) {
+        return dir;
+      }
+      throw noTicket(dir.path);
+    }
+    if (type == FileSystemEntityType.link) {
+      throw noTicket(dir.path);
+    }
+
+    try {
+      dir.createSync();
+    } on FileSystemException {
+      // A file in the way, or something that appeared since the check above.
+      if (_typeOf(dir.path) != FileSystemEntityType.notFound) {
+        throw noTicket(dir.path);
+      }
+      rethrow;
+    }
+    return dir;
   }
 
   /// Returns every ticket of the workspace [rootPath], sorted by name: the
@@ -283,24 +410,47 @@ class WorkspaceUtils {
   /// `ticket.json`.
   static bool _isLegacyTicketDir(Directory directory) =>
       !isHiddenName(_name(directory.path)) &&
-      path.basename(directory.parent.path) == ggMultiLegacyTicketFolder;
+      _isLegacyTicketFolderName(_parentName(directory.path));
 
   // ...........................................................................
   /// Whether [directory] is hidden or sits directly in the trash folder.
-  static bool _isHiddenOrInTrash(Directory directory) {
-    final absolute = path.normalize(path.absolute(directory.path));
-    return isHiddenName(path.basename(absolute)) ||
-        path.basename(path.dirname(absolute)) == ggMultiTrashFolder;
-  }
+  static bool _isHiddenOrInTrash(Directory directory) =>
+      isHiddenName(_name(directory.path)) ||
+      _isTrashName(_parentName(directory.path));
 
   // ...........................................................................
   /// Whether [directory] is the trash folder `.trash`.
   static bool _isTrash(Directory directory) =>
-      _name(directory.path) == ggMultiTrashFolder;
+      _isTrashName(_name(directory.path));
 
   // ...........................................................................
-  /// The name of the folder at [folderPath], independent of `.` / `..`
-  /// segments and a trailing separator.
+  /// Whether [name] names the trash folder, in whatever case.
+  static bool _isTrashName(String name) =>
+      name.toLowerCase() == ggMultiTrashFolder;
+
+  // ...........................................................................
+  /// Whether [name] names the legacy `tickets` folder, in whatever case.
+  static bool _isLegacyTicketFolderName(String name) =>
+      name.toLowerCase() == ggMultiLegacyTicketFolder;
+
+  // ...........................................................................
+  /// [folderPath] as an absolute path without `.` / `..` segments and without
+  /// a trailing separator — the one spelling every name check works on.
+  static String _absolute(String folderPath) =>
+      path.normalize(path.absolute(folderPath));
+
+  // ...........................................................................
+  /// The name of the folder at [folderPath].
   static String _name(String folderPath) =>
-      path.basename(path.normalize(path.absolute(folderPath)));
+      path.basename(_absolute(folderPath));
+
+  // ...........................................................................
+  /// The name of the folder [folderPath] sits in.
+  static String _parentName(String folderPath) =>
+      path.basename(path.dirname(_absolute(folderPath)));
+
+  // ...........................................................................
+  /// What sits at [entityPath], links not followed.
+  static FileSystemEntityType _typeOf(String entityPath) =>
+      FileSystemEntity.typeSync(entityPath, followLinks: false);
 }
