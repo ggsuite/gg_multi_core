@@ -79,10 +79,14 @@ void main() {
     });
 
     test('resolves the ocean of the workspace from a closed ticket in the '
-        'trash, not a .trash/.ocean', () async {
+        'trash, not the .ocean the trash holds', () async {
       // Arrange ---------------------------------------------------------------
       Directory(path.join(tempRoot.path, ggMultiOceanFolder)).createSync();
       final trash = Directory(path.join(tempRoot.path, ggMultiTrashFolder));
+      // The trash keeps the repos removed from the ocean in an ocean of its
+      // own.
+      Directory(path.join(trash.path, ggMultiOceanFolder))
+          .createSync(recursive: true);
       final closed = makeTicket(trash, 'T1');
       final repo = Directory(path.join(closed.path, 'gg_foo'))..createSync();
 
@@ -93,6 +97,39 @@ void main() {
 
       // Assert ----------------------------------------------------------------
       expect(result, path.join(tempRoot.path, ggMultiOceanFolder));
+      // The same from the trash itself and from its ocean.
+      for (final dir in <String>[
+        trash.path,
+        path.join(trash.path, ggMultiOceanFolder),
+      ]) {
+        expect(
+          WorkspaceUtils.defaultOceanWorkspacePath(workingDir: dir),
+          path.join(tempRoot.path, ggMultiOceanFolder),
+          reason: dir,
+        );
+      }
+    });
+
+    test('neither migrates a .master in the trash nor takes a tickets folder '
+        'in it for a workspace', () async {
+      // Arrange ---------------------------------------------------------------
+      Directory(path.join(tempRoot.path, ggMultiOceanFolder)).createSync();
+      final trash = Directory(path.join(tempRoot.path, ggMultiTrashFolder));
+      final trashedMaster = Directory(
+        path.join(trash.path, ggMultiLegacyMasterFolder),
+      )..createSync(recursive: true);
+      Directory(path.join(trash.path, ggMultiLegacyTicketFolder)).createSync();
+      final sub = Directory(path.join(trash.path, 'sub'))..createSync();
+
+      // Act -------------------------------------------------------------------
+      final result = WorkspaceUtils.defaultOceanWorkspacePath(
+        workingDir: sub.path,
+      );
+
+      // Assert ----------------------------------------------------------------
+      expect(result, path.join(tempRoot.path, ggMultiOceanFolder));
+      expect(trashedMaster.existsSync(), isTrue);
+      expect(messages, isEmpty);
     });
 
     test('renames a legacy .master and returns the .ocean path', () async {
@@ -221,6 +258,22 @@ void main() {
       );
       expect(result, equals(customCwd.path));
     });
+
+    test('is the workspace root, not the trash, inside the trash', () async {
+      final root = Directory(path.join(tempRoot.path, 'root'));
+      Directory(path.join(root.path, ggMultiOceanFolder))
+          .createSync(recursive: true);
+      Directory(path.join(root.path, ggMultiTrashFolder, ggMultiOceanFolder))
+          .createSync(recursive: true);
+      final repo = Directory(
+        path.join(root.path, ggMultiTrashFolder, 'T1', 'repo'),
+      )..createSync(recursive: true);
+
+      final result = WorkspaceUtils.defaultGgMultiWorkspacePath(
+        workingDir: repo.path,
+      );
+      expect(result, equals(root.path));
+    });
   });
 
   group('WorkspaceUtils.isInsideExistingWorkspace', () {
@@ -327,6 +380,23 @@ void main() {
         isFalse,
       );
     });
+
+    test('does not count the .ocean or .master of the trash', () async {
+      // Arrange ------------------------------------------------------------
+      final root = Directory(path.join(tempRoot.path, 'root'));
+      final trash = Directory(path.join(root.path, ggMultiTrashFolder));
+      Directory(path.join(trash.path, ggMultiOceanFolder))
+          .createSync(recursive: true);
+      Directory(path.join(trash.path, ggMultiLegacyMasterFolder)).createSync();
+      final inTrash = Directory(path.join(trash.path, 'T1'))..createSync();
+
+      // Act + Assert -------------------------------------------------------
+      expect(WorkspaceUtils.isInsideExistingWorkspace(inTrash.path), isFalse);
+
+      // The ocean of the workspace root above still counts.
+      Directory(path.join(root.path, ggMultiOceanFolder)).createSync();
+      expect(WorkspaceUtils.isInsideExistingWorkspace(inTrash.path), isTrue);
+    });
   });
 
   group('WorkspaceUtils.detectTicketPath', () {
@@ -377,6 +447,16 @@ void main() {
       expect(WorkspaceUtils.detectTicketPath(tempRoot.path), isNull);
     });
 
+    test('finds a ticket in a workspace root with a hidden name', () {
+      final root = Directory(path.join(tempRoot.path, '.ws'))..createSync();
+      Directory(path.join(root.path, ggMultiOceanFolder)).createSync();
+      final ticket = makeTicket(root, 'T1');
+      final repo = Directory(path.join(ticket.path, 'gg_foo'))..createSync();
+
+      expect(WorkspaceUtils.detectTicketPath(ticket.path), ticket.path);
+      expect(WorkspaceUtils.detectTicketPath(repo.path), ticket.path);
+    });
+
     group('never finds a ticket in a hidden folder', () {
       setUp(() {
         Directory(path.join(tempRoot.path, ggMultiOceanFolder)).createSync();
@@ -393,10 +473,13 @@ void main() {
 
       test('nor a closed ticket in the trash', () {
         final trash = Directory(path.join(tempRoot.path, ggMultiTrashFolder));
-        final closed = makeTicket(trash, 'T1');
-        final repo = Directory(path.join(closed.path, 'gg_foo'))..createSync();
-        expect(WorkspaceUtils.detectTicketPath(closed.path), isNull);
-        expect(WorkspaceUtils.detectTicketPath(repo.path), isNull);
+        for (final name in <String>['T1', 'T1 (2)']) {
+          final closed = makeTicket(trash, name);
+          final repo = Directory(path.join(closed.path, 'gg_foo'))
+            ..createSync();
+          expect(WorkspaceUtils.detectTicketPath(closed.path), isNull);
+          expect(WorkspaceUtils.detectTicketPath(repo.path), isNull);
+        }
       });
 
       test('nor a hidden folder inside a legacy tickets folder', () {
@@ -449,9 +532,20 @@ void main() {
         }
       });
 
-      test('is false for a ticket inside a hidden folder', () {
+      test('is false for a closed ticket in the trash', () {
         final trash = Directory(path.join(tempRoot.path, ggMultiTrashFolder));
-        expect(WorkspaceUtils.isTicketDir(makeTicket(trash, 'T1')), isFalse);
+        for (final name in <String>['T1', 'T1 (2)']) {
+          expect(
+            WorkspaceUtils.isTicketDir(makeTicket(trash, name)),
+            isFalse,
+            reason: name,
+          );
+        }
+      });
+
+      test('is true for a ticket in a workspace root with a hidden name', () {
+        final root = Directory(path.join(tempRoot.path, '.ws'))..createSync();
+        expect(WorkspaceUtils.isTicketDir(makeTicket(root, 'T1')), isTrue);
       });
 
       test('judges the folder, not the spelling of its path', () {
@@ -555,6 +649,34 @@ void main() {
         expect(existing('doc'), isNull);
         expect(existing('ghost'), isNull);
       });
+
+      test('returns a ticket of a workspace root with a hidden name', () {
+        final root = Directory(path.join(tempRoot.path, '.ws'))..createSync();
+        final ticket = makeTicket(root, 'T1');
+        expect(
+          WorkspaceUtils.existingTicketDir(
+            rootPath: root.path,
+            ticketName: 'T1',
+          )?.path,
+          ticket.path,
+        );
+      });
+
+      test('is null for a closed ticket, also when called on the trash', () {
+        final trash = Directory(path.join(tempRoot.path, ggMultiTrashFolder));
+        makeTicket(trash, 'T1');
+        makeTicket(trash, 'T1 (2)');
+        for (final name in <String>['T1', 'T1 (2)']) {
+          expect(
+            WorkspaceUtils.existingTicketDir(
+              rootPath: trash.path,
+              ticketName: name,
+            ),
+            isNull,
+            reason: name,
+          );
+        }
+      });
     });
 
     group('rootOfTicket', () {
@@ -655,6 +777,24 @@ void main() {
               .map((d) => path.basename(d.path)),
           <String>['T1'],
         );
+      });
+
+      test('lists the tickets of a workspace root with a hidden name', () {
+        final root = Directory(path.join(tempRoot.path, '.ws'))..createSync();
+        makeTicket(root, 'T2');
+        makeTicket(root, 'T1');
+        makeTicket(root, '.github');
+        final trash = Directory(path.join(root.path, ggMultiTrashFolder));
+        makeTicket(trash, 'T0');
+        makeTicket(trash, 'T0 (2)');
+
+        expect(
+          WorkspaceUtils.ticketDirs(root.path)
+              .map((d) => path.basename(d.path)),
+          <String>['T1', 'T2'],
+        );
+        // Listing the trash itself does not revive its closed tickets.
+        expect(WorkspaceUtils.ticketDirs(trash.path), isEmpty);
       });
 
       test('is empty for a root that does not exist', () {

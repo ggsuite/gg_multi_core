@@ -31,6 +31,11 @@ class WorkspaceUtils {
   ///    its own or a legacy `tickets` directory — its parent is considered
   ///    the project root and the path `<root>/.ocean` is returned (even if
   ///    the directory does not yet exist).
+  ///
+  ///    The trash folder `.trash` is never a workspace root: it holds a
+  ///    `.ocean` of its own for the repositories gg removed from the ocean,
+  ///    so on its level neither rule is checked — and no `.master` in it is
+  ///    migrated. A command run in `<root>/.trash/…` resolves `<root>/.ocean`.
   /// 3. If neither 1 nor 2 matches, the algorithm continues with the parent
   ///    directory. When the root of the filesystem is reached without a match
   ///    the path `<original working dir>/.ocean` is returned.  NOTE:
@@ -54,28 +59,32 @@ class WorkspaceUtils {
       final ocean = path.join(dir.path, ggMultiOceanFolder);
       final legacy = path.join(dir.path, ggMultiLegacyMasterFolder);
 
-      // 1. Is there an existing ocean in the current folder? --------
-      if (Directory(legacy).existsSync()) {
-        migrateMasterFolderToOcean(rootPath: dir.path);
-      }
-      if (Directory(ocean).existsSync()) {
-        return ocean;
-      }
-      if (Directory(legacy).existsSync()) {
-        // The rename was not possible — stay on the legacy folder for this
-        // run; the next start retries.
-        return legacy;
-      }
+      // The trash is never a workspace root — continue with its parent.
+      if (!_isTrash(dir)) {
+        // 1. Is there an existing ocean in the current folder? --------
+        if (Directory(legacy).existsSync()) {
+          migrateMasterFolderToOcean(rootPath: dir.path);
+        }
+        if (Directory(ocean).existsSync()) {
+          return ocean;
+        }
+        if (Directory(legacy).existsSync()) {
+          // The rename was not possible — stay on the legacy folder for this
+          // run; the next start retries.
+          return legacy;
+        }
 
-      // 2. Is the current folder a ticket, or the root of a legacy workspace
-      //    that still groups its tickets in a `tickets` folder? --------------
-      if (Directory(path.join(dir.path, ggMultiLegacyTicketFolder))
-          .existsSync()) {
-        return ocean;
-      }
-      // A ticket sits directly in the root today, so the root is its parent.
-      if (isTicketDir(dir)) {
-        return path.join(dir.parent.path, ggMultiOceanFolder);
+        // 2. Is the current folder a ticket, or the root of a legacy
+        //    workspace that still groups its tickets in a `tickets` folder?
+        if (Directory(path.join(dir.path, ggMultiLegacyTicketFolder))
+            .existsSync()) {
+          return ocean;
+        }
+        // A ticket sits directly in the root today, so the root is its
+        // parent.
+        if (isTicketDir(dir)) {
+          return path.join(dir.parent.path, ggMultiOceanFolder);
+        }
       }
 
       // 3. Go one level up or break when we are at the filesystem root. -------
@@ -94,6 +103,9 @@ class WorkspaceUtils {
 
   /// Returns the path of the Gg Multi workspace, which is the parent directory
   /// of the ocean.
+  ///
+  /// Resolved through [defaultOceanWorkspacePath], so the trash folder is
+  /// never taken for a workspace here either.
   static String defaultGgMultiWorkspacePath({String? workingDir}) {
     return path.dirname(defaultOceanWorkspacePath(workingDir: workingDir));
   }
@@ -103,15 +115,19 @@ class WorkspaceUtils {
   /// an ocean folder — or a legacy `.master` folder, which counts too).
   /// This is used by `init` to prevent nested workspaces.
   ///
+  /// The `.ocean` the trash folder `.trash` holds does not count, just as for
+  /// [defaultOceanWorkspacePath]: the trash is no workspace.
+  ///
   /// A pure predicate: it never renames anything, it only answers whether a
   /// workspace already exists here.
   static bool isInsideExistingWorkspace(String directoryPath) {
     var dir = Directory(directoryPath).absolute;
 
     while (true) {
-      if (Directory(path.join(dir.path, ggMultiOceanFolder)).existsSync() ||
-          Directory(path.join(dir.path, ggMultiLegacyMasterFolder))
-              .existsSync()) {
+      if (!_isTrash(dir) &&
+          (Directory(path.join(dir.path, ggMultiOceanFolder)).existsSync() ||
+              Directory(path.join(dir.path, ggMultiLegacyMasterFolder))
+                  .existsSync())) {
         return true;
       }
 
@@ -136,9 +152,9 @@ class WorkspaceUtils {
   /// same file — and, so a ticket of an older gg that lost its `ticket.json`
   /// is still recognized, by that parent folder name as well.
   ///
-  /// Hidden folders are skipped on the way up ([isTicketDir]), so a command
-  /// run inside `<root>/.github` or a closed ticket in `<root>/.trash` finds
-  /// no ticket.
+  /// Hidden folders and closed tickets are skipped on the way up
+  /// ([isTicketDir]), so a command run inside `<root>/.github` or a closed
+  /// ticket in `<root>/.trash` finds no ticket.
   static String? detectTicketPath(String executionPath) {
     var current = Directory(executionPath);
     while (true) {
@@ -155,17 +171,19 @@ class WorkspaceUtils {
   }
 
   /// Returns `true` when [directory] is a ticket folder, i.e. when it holds
-  /// a `ticket.json` and neither it nor the folder it sits in is hidden.
+  /// a `ticket.json`, its name does not start with a dot and it does not sit
+  /// in the trash.
   ///
   /// This is the one place that decides what a ticket is. Hidden folders are
   /// never tickets, even when they happen to hold a `ticket.json`: the
   /// `.github`, `.claude` or `.dart_tool` a DNA instantiates in the workspace
-  /// root, the `.gg` folder of a repository that still carries a legacy
-  /// marker — and every ticket inside a hidden folder, above all a closed one
-  /// in `<root>/.trash/<ticket>`, which keeps its `ticket.json` but is no
-  /// active ticket any more.
+  /// root, or the `.gg` folder of a repository that still carries a legacy
+  /// marker. Neither is a closed ticket in `<root>/.trash/<ticket>` (or
+  /// `<ticket> (2)`, …): it keeps its `ticket.json` but is no active ticket
+  /// any more. Only the folder's own name and the trash count — a workspace
+  /// root with a hidden name (`~/.ws/<ticket>`) holds tickets like any other.
   static bool isTicketDir(Directory directory) =>
-      !_isHiddenOrInHiddenFolder(directory) &&
+      !_isHiddenOrInTrash(directory) &&
       File(path.join(directory.path, ticketJsonFileName)).existsSync();
 
   /// Returns `true` when [name] is the name of a hidden folder, i.e. when it
@@ -268,12 +286,17 @@ class WorkspaceUtils {
       path.basename(directory.parent.path) == ggMultiLegacyTicketFolder;
 
   // ...........................................................................
-  /// Whether [directory] or the folder it sits in is hidden.
-  static bool _isHiddenOrInHiddenFolder(Directory directory) {
+  /// Whether [directory] is hidden or sits directly in the trash folder.
+  static bool _isHiddenOrInTrash(Directory directory) {
     final absolute = path.normalize(path.absolute(directory.path));
     return isHiddenName(path.basename(absolute)) ||
-        isHiddenName(path.basename(path.dirname(absolute)));
+        path.basename(path.dirname(absolute)) == ggMultiTrashFolder;
   }
+
+  // ...........................................................................
+  /// Whether [directory] is the trash folder `.trash`.
+  static bool _isTrash(Directory directory) =>
+      _name(directory.path) == ggMultiTrashFolder;
 
   // ...........................................................................
   /// The name of the folder at [folderPath], independent of `.` / `..`

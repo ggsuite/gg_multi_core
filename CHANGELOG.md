@@ -2,9 +2,14 @@
 
 ## Unreleased
 
-### Changed
+### Added
 
-- Hidden folders are never tickets: WorkspaceUtils.isTicketDir rejects .github, .claude, .dart_tool and closed tickets in .trash, and existingTicketDir resolves only real tickets by name
+- `WorkspaceUtils.isHiddenName` and `WorkspaceUtils.existingTicketDir`, which resolves a ticket name to a real ticket only — never to a hidden folder such as `.github` or a plain folder such as `doc`
+
+### Fixed
+
+- Hidden folders are never tickets: `WorkspaceUtils.isTicketDir` rejects `.github`, `.claude`, `.dart_tool` and every closed ticket in `.trash` (`<ticket>`, `<ticket> (2)`, …), even with a `ticket.json`; a ticket in a workspace root with a hidden name (`~/.ws/<ticket>`) stays a ticket
+- `defaultOceanWorkspacePath`, `defaultGgMultiWorkspacePath` and `isInsideExistingWorkspace` walk past the `.trash` folder, so a command run in `<root>/.trash/…` resolves `<root>/.ocean` instead of `<root>/.trash/.ocean`, and a `.master` in the trash is no longer migrated as a workspace of its own
 
 ## 4.5.1 - 2026-09-11
 
