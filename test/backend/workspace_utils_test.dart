@@ -156,6 +156,44 @@ void main() {
       }
     });
 
+    test('resolves the ocean of a workspace root named tickets, in any '
+        'case, from its tickets — a legacy one included', () async {
+      var i = 0;
+      for (final rootName in <String>[ggMultiLegacyTicketFolder, 'Tickets']) {
+        // Arrange -------------------------------------------------------------
+        final parent = Directory(path.join(tempRoot.path, 'work${i++}'))
+          ..createSync();
+        final root = Directory(path.join(parent.path, rootName))..createSync();
+        final ocean = Directory(path.join(root.path, ggMultiOceanFolder))
+          ..createSync();
+        final repo = Directory(path.join(makeTicket(root, 'T1').path, 'repo'))
+          ..createSync();
+        final legacyTickets = Directory(
+          path.join(root.path, ggMultiLegacyTicketFolder),
+        );
+        final legacyRepo = Directory(
+          path.join(makeTicket(legacyTickets, 'L1').path, 'repo'),
+        )..createSync();
+        final other = Directory(path.join(parent.path, 'other'))..createSync();
+
+        // Act + Assert --------------------------------------------------------
+        for (final dir in <Directory>[repo, legacyRepo]) {
+          expect(
+            WorkspaceUtils.defaultOceanWorkspacePath(workingDir: dir.path),
+            ocean.path,
+            reason: dir.path,
+          );
+        }
+        // The root named tickets does not make the folder around it the root
+        // of a legacy workspace.
+        expect(
+          WorkspaceUtils.defaultOceanWorkspacePath(workingDir: other.path),
+          path.join(other.path, ggMultiOceanFolder),
+          reason: rootName,
+        );
+      }
+    });
+
     test('climbs from a relative working dir such as .', () async {
       // Arrange ---------------------------------------------------------------
       Directory(path.join(tempRoot.path, ggMultiOceanFolder)).createSync();
@@ -535,6 +573,18 @@ void main() {
       expect(WorkspaceUtils.detectTicketPath(tempRoot.path), isNull);
     });
 
+    test('takes no plain folder of a workspace root named tickets for a '
+        'legacy ticket', () {
+      final root = Directory(path.join(tempRoot.path, 'Tickets'))..createSync();
+      Directory(path.join(root.path, ggMultiLegacyMasterFolder)).createSync();
+      final doc = Directory(path.join(root.path, 'doc', 'sub'))
+        ..createSync(recursive: true);
+      final ticket = makeTicket(root, 'T1');
+
+      expect(WorkspaceUtils.detectTicketPath(doc.path), isNull);
+      expect(WorkspaceUtils.detectTicketPath(ticket.path), ticket.path);
+    });
+
     test('finds a ticket in a workspace root with a hidden name', () {
       final root = Directory(path.join(tempRoot.path, '.ws'))..createSync();
       Directory(path.join(root.path, ggMultiOceanFolder)).createSync();
@@ -813,7 +863,8 @@ void main() {
         }
       });
 
-      test('normalizeTicketName drops exactly one trailing separator', () {
+      test('normalizeTicketName drops exactly one trailing separator and one '
+          'leading tickets folder that leaves a valid name', () {
         final expected = <String, String>{
           'T1/': 'T1',
           r'T1\': 'T1',
@@ -822,6 +873,22 @@ void main() {
           '/': '/',
           r'\': r'\',
           '': '',
+          // What the tab completion makes of a legacy ticket.
+          'tickets/L1/': 'L1',
+          'tickets/L1': 'L1',
+          r'Tickets\L1\': 'L1',
+          'TICKETS/L1': 'L1',
+          // Everything else stays for ticketNameError to refuse.
+          'tickets': 'tickets',
+          'tickets/': 'tickets',
+          'tickets//': 'tickets/',
+          'tickets/L1//': 'tickets/L1/',
+          'tickets/a/b': 'tickets/a/b',
+          'tickets/.github': 'tickets/.github',
+          'tickets/tickets': 'tickets/tickets',
+          'tickets/ ': 'tickets/ ',
+          'ticketsX/L1': 'ticketsX/L1',
+          'my/L1': 'my/L1',
         };
         for (final MapEntry(key: name, value: normalized) in expected.entries) {
           expect(
@@ -1013,6 +1080,22 @@ void main() {
         )..createSync();
         final ticket = makeTicket(legacyRoot, 'T1');
         expect(WorkspaceUtils.rootOfTicket(ticket), tempRoot.path);
+      });
+
+      test('is the parent named tickets when that one is a workspace root '
+          'itself', () {
+        final roots = <String, String>{
+          ggMultiLegacyTicketFolder: ggMultiOceanFolder,
+          'Tickets': ggMultiLegacyMasterFolder,
+        };
+        var i = 0;
+        for (final MapEntry(key: name, value: ocean) in roots.entries) {
+          final root = Directory(path.join(tempRoot.path, 'ws${i++}', name))
+            ..createSync(recursive: true);
+          Directory(path.join(root.path, ocean)).createSync();
+          final ticket = makeTicket(root, 'T1');
+          expect(WorkspaceUtils.rootOfTicket(ticket), root.path, reason: name);
+        }
       });
     });
 

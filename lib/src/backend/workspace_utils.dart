@@ -34,7 +34,9 @@ class WorkspaceUtils {
   ///    the workspace root it belongs to ([rootOfTicket]) is returned — the
   ///    parent of `<root>/<ticket>`, the grandparent of a legacy
   ///    `<root>/tickets/<ticket>`. Both paths are returned even if the
-  ///    directory does not yet exist.
+  ///    directory does not yet exist. A folder named `tickets` that holds a
+  ///    `.ocean` or `.master` is a workspace root itself, never a legacy
+  ///    `tickets` folder.
   ///
   ///    The trash folder `.trash` is never a workspace root: it holds a
   ///    `.ocean` of its own for the repositories gg removed from the ocean,
@@ -83,8 +85,9 @@ class WorkspaceUtils {
 
         // 2. Is the current folder the root of a legacy workspace that still
         //    groups its tickets in a `tickets` folder, or a ticket? ---------
-        if (Directory(path.join(dir.path, ggMultiLegacyTicketFolder))
-            .existsSync()) {
+        final legacyTickets = path.join(dir.path, ggMultiLegacyTicketFolder);
+        if (Directory(legacyTickets).existsSync() &&
+            _isLegacyTicketFolder(legacyTickets)) {
           return ocean;
         }
         if (isTicketDir(dir)) {
@@ -129,10 +132,7 @@ class WorkspaceUtils {
     var dir = Directory(_absolute(directoryPath));
 
     while (true) {
-      if (!_isTrash(dir) &&
-          (Directory(path.join(dir.path, ggMultiOceanFolder)).existsSync() ||
-              Directory(path.join(dir.path, ggMultiLegacyMasterFolder))
-                  .existsSync())) {
+      if (!_isTrash(dir) && _holdsOcean(dir.path)) {
         return true;
       }
 
@@ -197,13 +197,32 @@ class WorkspaceUtils {
   /// created under such a name either.
   static bool isHiddenName(String name) => name.startsWith('.');
 
-  /// Returns [name] without one trailing separator, the way a shell's tab
-  /// completion appends it to a folder (`T1/`). Only one is removed, so a
-  /// name that is a path stays one for [ticketNameError].
-  static String normalizeTicketName(String name) =>
-      name.length > 1 && (name.endsWith('/') || name.endsWith(r'\'))
-      ? name.substring(0, name.length - 1)
-      : name;
+  /// Returns [name] the way a user means it when typing a ticket name.
+  ///
+  /// One trailing separator is removed, the way a shell's tab completion
+  /// appends it to a folder (`T1/`). One leading legacy `tickets/` (or
+  /// `tickets\`, in any case) is removed as well when a valid ticket name
+  /// ([isValidTicketName]) is left — what the tab completion in the root of
+  /// an older workspace makes of a legacy ticket (`tickets/L1/` → `L1`).
+  /// Nothing else is removed, so a name that is a path (`T1//`,
+  /// `tickets/a/b`) or `tickets` itself stays one for [ticketNameError].
+  static String normalizeTicketName(String name) {
+    final trimmed =
+        name.length > 1 && (name.endsWith('/') || name.endsWith(r'\'))
+        ? name.substring(0, name.length - 1)
+        : name;
+
+    const prefix = ggMultiLegacyTicketFolder.length;
+    if (trimmed.length > prefix + 1 &&
+        _isLegacyTicketFolderName(trimmed.substring(0, prefix)) &&
+        (trimmed[prefix] == '/' || trimmed[prefix] == r'\')) {
+      final rest = trimmed.substring(prefix + 1);
+      if (isValidTicketName(rest)) {
+        return rest;
+      }
+    }
+    return trimmed;
+  }
 
   /// Returns why [name] cannot name a ticket, or `null` when it can.
   ///
@@ -239,9 +258,12 @@ class WorkspaceUtils {
 
   /// Returns the workspace root a ticket at [ticketDir] belongs to: its
   /// parent, or its grandparent for a legacy `<root>/tickets/<ticket>`.
+  ///
+  /// A parent named `tickets` that holds a `.ocean` or `.master` is the
+  /// workspace root itself (`~/work/Tickets/<ticket>`), so it is returned.
   static String rootOfTicket(Directory ticketDir) {
     final parent = ticketDir.parent;
-    return _isLegacyTicketFolderName(path.basename(parent.path))
+    return _isLegacyTicketFolder(parent.path)
         ? parent.parent.path
         : parent.path;
   }
@@ -410,7 +432,23 @@ class WorkspaceUtils {
   /// `ticket.json`.
   static bool _isLegacyTicketDir(Directory directory) =>
       !isHiddenName(_name(directory.path)) &&
-      _isLegacyTicketFolderName(_parentName(directory.path));
+      _isLegacyTicketFolder(path.dirname(_absolute(directory.path)));
+
+  // ...........................................................................
+  /// Whether the folder at [folderPath] is a legacy `tickets` folder that
+  /// groups the tickets of an older workspace: named `tickets` in any case,
+  /// but no workspace root itself — a root of that name holds a `.ocean` or
+  /// `.master` ([_holdsOcean]).
+  static bool _isLegacyTicketFolder(String folderPath) =>
+      _isLegacyTicketFolderName(path.basename(folderPath)) &&
+      !_holdsOcean(folderPath);
+
+  // ...........................................................................
+  /// Whether the folder at [folderPath] holds a `.ocean` or a legacy
+  /// `.master`, which makes it a workspace root.
+  static bool _holdsOcean(String folderPath) =>
+      Directory(path.join(folderPath, ggMultiOceanFolder)).existsSync() ||
+      Directory(path.join(folderPath, ggMultiLegacyMasterFolder)).existsSync();
 
   // ...........................................................................
   /// Whether [directory] is hidden or sits directly in the trash folder.
