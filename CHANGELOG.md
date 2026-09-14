@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Hidden folders are never tickets: WorkspaceUtils.isTicketDir rejects .github, .claude, .dart_tool and closed tickets in .trash, and existingTicketDir resolves only real tickets by name
+
 ## 4.5.1 - 2026-09-11
 
 ### Fixed

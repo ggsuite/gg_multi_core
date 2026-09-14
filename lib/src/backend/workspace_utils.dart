@@ -135,11 +135,14 @@ class WorkspaceUtils {
   /// recognize them by. A legacy `<root>/tickets/<ticket>` is found by the
   /// same file — and, so a ticket of an older gg that lost its `ticket.json`
   /// is still recognized, by that parent folder name as well.
+  ///
+  /// Hidden folders are skipped on the way up ([isTicketDir]), so a command
+  /// run inside `<root>/.github` or a closed ticket in `<root>/.trash` finds
+  /// no ticket.
   static String? detectTicketPath(String executionPath) {
     var current = Directory(executionPath);
     while (true) {
-      if (isTicketDir(current) ||
-          path.basename(current.parent.path) == ggMultiLegacyTicketFolder) {
+      if (isTicketDir(current) || _isLegacyTicketDir(current)) {
         return current.path;
       }
       final parent = current.parent;
@@ -152,9 +155,23 @@ class WorkspaceUtils {
   }
 
   /// Returns `true` when [directory] is a ticket folder, i.e. when it holds
-  /// a `ticket.json`.
+  /// a `ticket.json` and neither it nor the folder it sits in is hidden.
+  ///
+  /// This is the one place that decides what a ticket is. Hidden folders are
+  /// never tickets, even when they happen to hold a `ticket.json`: the
+  /// `.github`, `.claude` or `.dart_tool` a DNA instantiates in the workspace
+  /// root, the `.gg` folder of a repository that still carries a legacy
+  /// marker — and every ticket inside a hidden folder, above all a closed one
+  /// in `<root>/.trash/<ticket>`, which keeps its `ticket.json` but is no
+  /// active ticket any more.
   static bool isTicketDir(Directory directory) =>
+      !_isHiddenOrInHiddenFolder(directory) &&
       File(path.join(directory.path, ticketJsonFileName)).existsSync();
+
+  /// Returns `true` when [name] is the name of a hidden folder, i.e. when it
+  /// starts with a dot. Such a folder is never a ticket, so no ticket may be
+  /// created under such a name either.
+  static bool isHiddenName(String name) => name.startsWith('.');
 
   /// Returns the workspace root a ticket at [ticketDir] belongs to: its
   /// parent, or its grandparent for a legacy `<root>/tickets/<ticket>`.
@@ -185,6 +202,33 @@ class WorkspaceUtils {
     return legacy.existsSync() ? legacy : dir;
   }
 
+  /// Returns the existing ticket named [ticketName] in the workspace
+  /// [rootPath] — `<root>/<ticket>`, or the legacy `<root>/tickets/<ticket>`
+  /// — or `null` when there is no such ticket.
+  ///
+  /// Unlike [ticketDir] the result is always a real ticket, never just a
+  /// folder of that name: `<root>/<ticket>` has to be a ticket
+  /// ([isTicketDir]), so neither a hidden folder (`.github`, `.trash`, `.`)
+  /// nor a plain one (the `doc` or `dna` folder a DNA instantiates in the
+  /// root) is taken for one. A legacy folder counts by its place, as it does
+  /// for [detectTicketPath]. Commands that act on a named ticket use this.
+  static Directory? existingTicketDir({
+    required String rootPath,
+    required String ticketName,
+  }) {
+    if (isHiddenName(ticketName)) {
+      return null;
+    }
+    final dir = Directory(path.join(rootPath, ticketName));
+    if (isTicketDir(dir)) {
+      return dir;
+    }
+    final legacy = Directory(
+      path.join(rootPath, ggMultiLegacyTicketFolder, ticketName),
+    );
+    return legacy.existsSync() ? legacy : null;
+  }
+
   /// Returns every ticket of the workspace [rootPath], sorted by name: the
   /// folders that hold a `ticket.json` directly in the root, plus the ones a
   /// legacy `<root>/tickets` folder still holds.
@@ -203,7 +247,7 @@ class WorkspaceUtils {
 
   // ...........................................................................
   /// The direct subdirectories of [parentPath] that are tickets. Hidden
-  /// folders (`.ocean`, `.trash`, …) are never tickets.
+  /// folders (`.ocean`, `.trash`, …) are never tickets — [isTicketDir] knows.
   static List<Directory> _ticketDirsIn(String parentPath) {
     final parent = Directory(parentPath);
     if (!parent.existsSync()) {
@@ -211,7 +255,29 @@ class WorkspaceUtils {
     }
     return <Directory>[
       for (final dir in parent.listSync().whereType<Directory>())
-        if (!path.basename(dir.path).startsWith('.') && isTicketDir(dir)) dir,
+        if (isTicketDir(dir)) dir,
     ];
   }
+
+  // ...........................................................................
+  /// Whether [directory] is a visible folder inside a legacy `tickets`
+  /// folder, which makes it a ticket of an older gg even without a
+  /// `ticket.json`.
+  static bool _isLegacyTicketDir(Directory directory) =>
+      !isHiddenName(_name(directory.path)) &&
+      path.basename(directory.parent.path) == ggMultiLegacyTicketFolder;
+
+  // ...........................................................................
+  /// Whether [directory] or the folder it sits in is hidden.
+  static bool _isHiddenOrInHiddenFolder(Directory directory) {
+    final absolute = path.normalize(path.absolute(directory.path));
+    return isHiddenName(path.basename(absolute)) ||
+        isHiddenName(path.basename(path.dirname(absolute)));
+  }
+
+  // ...........................................................................
+  /// The name of the folder at [folderPath], independent of `.` / `..`
+  /// segments and a trailing separator.
+  static String _name(String folderPath) =>
+      path.basename(path.normalize(path.absolute(folderPath)));
 }

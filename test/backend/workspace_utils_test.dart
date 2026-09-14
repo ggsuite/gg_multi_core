@@ -78,6 +78,23 @@ void main() {
       expect(result, path.join(tempRoot.path, ggMultiOceanFolder));
     });
 
+    test('resolves the ocean of the workspace from a closed ticket in the '
+        'trash, not a .trash/.ocean', () async {
+      // Arrange ---------------------------------------------------------------
+      Directory(path.join(tempRoot.path, ggMultiOceanFolder)).createSync();
+      final trash = Directory(path.join(tempRoot.path, ggMultiTrashFolder));
+      final closed = makeTicket(trash, 'T1');
+      final repo = Directory(path.join(closed.path, 'gg_foo'))..createSync();
+
+      // Act -------------------------------------------------------------------
+      final result = WorkspaceUtils.defaultOceanWorkspacePath(
+        workingDir: repo.path,
+      );
+
+      // Assert ----------------------------------------------------------------
+      expect(result, path.join(tempRoot.path, ggMultiOceanFolder));
+    });
+
     test('renames a legacy .master and returns the .ocean path', () async {
       // Arrange ---------------------------------------------------------------
       final legacyDir = Directory(
@@ -359,6 +376,46 @@ void main() {
           .createSync(recursive: true);
       expect(WorkspaceUtils.detectTicketPath(tempRoot.path), isNull);
     });
+
+    group('never finds a ticket in a hidden folder', () {
+      setUp(() {
+        Directory(path.join(tempRoot.path, ggMultiOceanFolder)).createSync();
+      });
+
+      test('even when the hidden folder holds a ticket.json', () {
+        for (final name in <String>['.github', '.claude', '.dart_tool']) {
+          final hidden = makeTicket(tempRoot, name);
+          final sub = Directory(path.join(hidden.path, 'sub'))..createSync();
+          expect(WorkspaceUtils.detectTicketPath(hidden.path), isNull);
+          expect(WorkspaceUtils.detectTicketPath(sub.path), isNull);
+        }
+      });
+
+      test('nor a closed ticket in the trash', () {
+        final trash = Directory(path.join(tempRoot.path, ggMultiTrashFolder));
+        final closed = makeTicket(trash, 'T1');
+        final repo = Directory(path.join(closed.path, 'gg_foo'))..createSync();
+        expect(WorkspaceUtils.detectTicketPath(closed.path), isNull);
+        expect(WorkspaceUtils.detectTicketPath(repo.path), isNull);
+      });
+
+      test('nor a hidden folder inside a legacy tickets folder', () {
+        final hidden = Directory(
+          path.join(tempRoot.path, ggMultiLegacyTicketFolder, '.foo', 'sub'),
+        )..createSync(recursive: true);
+        expect(WorkspaceUtils.detectTicketPath(hidden.path), isNull);
+      });
+
+      test('but the ticket around the hidden folder of a repo', () {
+        final ticket = makeTicket(tempRoot, 'T1');
+        // A repo's `.gg` may still hold the marker of an older gg.
+        final dotGg = makeTicket(
+          Directory(path.join(ticket.path, 'gg_foo')),
+          '.gg',
+        );
+        expect(WorkspaceUtils.detectTicketPath(dotGg.path), ticket.path);
+      });
+    });
   });
 
   group('WorkspaceUtils ticket lookup', () {
@@ -380,6 +437,123 @@ void main() {
         final plain = Directory(path.join(tempRoot.path, 'plain'))
           ..createSync();
         expect(WorkspaceUtils.isTicketDir(plain), isFalse);
+      });
+
+      test('is false for a hidden folder holding a ticket.json', () {
+        for (final name in <String>['.github', '.claude', '.dart_tool']) {
+          expect(
+            WorkspaceUtils.isTicketDir(makeTicket(tempRoot, name)),
+            isFalse,
+            reason: name,
+          );
+        }
+      });
+
+      test('is false for a ticket inside a hidden folder', () {
+        final trash = Directory(path.join(tempRoot.path, ggMultiTrashFolder));
+        expect(WorkspaceUtils.isTicketDir(makeTicket(trash, 'T1')), isFalse);
+      });
+
+      test('judges the folder, not the spelling of its path', () {
+        final ticket = makeTicket(tempRoot, 'T1');
+        final hidden = makeTicket(tempRoot, '.hidden');
+        Directory(path.join(ticket.path, 'sub')).createSync();
+
+        // `..` segments and a trailing separator do not hide a ticket …
+        expect(
+          WorkspaceUtils.isTicketDir(
+            Directory(path.join(hidden.path, '..', 'T1')),
+          ),
+          isTrue,
+        );
+        expect(
+          WorkspaceUtils.isTicketDir(
+            Directory(path.join(ticket.path, 'sub', '..')),
+          ),
+          isTrue,
+        );
+        expect(
+          WorkspaceUtils.isTicketDir(
+            Directory('${ticket.path}${path.separator}'),
+          ),
+          isTrue,
+        );
+        // … and do not reveal a hidden one.
+        expect(
+          WorkspaceUtils.isTicketDir(
+            Directory(path.join(ticket.path, '..', '.hidden')),
+          ),
+          isFalse,
+        );
+      });
+    });
+
+    group('isHiddenName', () {
+      test('is true exactly for names starting with a dot', () {
+        for (final name in <String>['.github', '.trash', '.', '..']) {
+          expect(WorkspaceUtils.isHiddenName(name), isTrue, reason: name);
+        }
+        for (final name in <String>['T1', 'a.b', 'doc']) {
+          expect(WorkspaceUtils.isHiddenName(name), isFalse, reason: name);
+        }
+      });
+    });
+
+    group('existingTicketDir', () {
+      Directory? existing(String name) => WorkspaceUtils.existingTicketDir(
+        rootPath: tempRoot.path,
+        ticketName: name,
+      );
+
+      Directory legacyRoot() =>
+          Directory(path.join(tempRoot.path, ggMultiLegacyTicketFolder))
+            ..createSync(recursive: true);
+
+      test('returns a ticket in the root', () {
+        final ticket = makeTicket(tempRoot, 'T1');
+        expect(existing('T1')?.path, ticket.path);
+      });
+
+      test('returns a legacy ticket, even without a ticket.json', () {
+        final legacy = Directory(path.join(legacyRoot().path, 'OLD'))
+          ..createSync();
+        expect(existing('OLD')?.path, legacy.path);
+      });
+
+      test('prefers the root over the legacy folder', () {
+        final ticket = makeTicket(tempRoot, 'T1');
+        makeTicket(legacyRoot(), 'T1');
+        expect(existing('T1')?.path, ticket.path);
+      });
+
+      test('returns the legacy ticket when the root only holds a plain '
+          'folder of that name', () {
+        Directory(path.join(tempRoot.path, 'T1')).createSync();
+        final legacy = makeTicket(legacyRoot(), 'T1');
+        expect(existing('T1')?.path, legacy.path);
+      });
+
+      test('is null for hidden folders, even with a ticket.json', () {
+        Directory(path.join(tempRoot.path, ggMultiOceanFolder)).createSync();
+        makeTicket(tempRoot, '.github');
+        makeTicket(Directory(path.join(tempRoot.path, '.trash')), 'T1');
+        Directory(path.join(legacyRoot().path, '.foo')).createSync();
+        for (final name in <String>[
+          '.github',
+          '.ocean',
+          '.trash',
+          '.foo',
+          '.',
+          '..',
+        ]) {
+          expect(existing(name), isNull, reason: name);
+        }
+      });
+
+      test('is null for a plain folder and for a missing one', () {
+        Directory(path.join(tempRoot.path, 'doc')).createSync();
+        expect(existing('doc'), isNull);
+        expect(existing('ghost'), isNull);
       });
     });
 
@@ -457,6 +631,29 @@ void main() {
           WorkspaceUtils.ticketDirs(tempRoot.path)
               .map((d) => path.basename(d.path)),
           <String>['T0', 'T1', 'T2'],
+        );
+      });
+
+      test('never lists hidden folders, even with a ticket.json', () {
+        makeTicket(tempRoot, 'T1');
+        // What a DNA instantiates in the workspace root …
+        for (final name in <String>['.github', '.claude', '.dart_tool']) {
+          makeTicket(tempRoot, name);
+        }
+        // … the trash with a closed ticket, and a hidden legacy folder.
+        makeTicket(
+          Directory(path.join(tempRoot.path, ggMultiTrashFolder)),
+          'X',
+        );
+        makeTicket(
+          Directory(path.join(tempRoot.path, ggMultiLegacyTicketFolder)),
+          '.foo',
+        );
+
+        expect(
+          WorkspaceUtils.ticketDirs(tempRoot.path)
+              .map((d) => path.basename(d.path)),
+          <String>['T1'],
         );
       });
 
