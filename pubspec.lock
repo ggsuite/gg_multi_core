@@ -460,10 +460,9 @@ packages:
   helix:
     dependency: "direct dev"
     description:
-      name: helix
-      sha256: "21f84973cf4c18ca001aea45cb33fe8aa1d0e17270aedf300cedd6cc9ec92078"
-      url: "https://pub.dev"
-    source: hosted
+      path: "../helix"
+      relative: true
+    source: path
     version: "1.7.1"
   http:
     dependency: "direct main"
