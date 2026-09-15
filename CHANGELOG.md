@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Wire the new helix --workspace mode into gg do init workspace, and fix a pre-existing RepoFreshness bug that misjudged a never-fetched checkout's non-main default branch as a feature branch
+
 ## 4.6.0 - 2026-09-14
 
 ### Added

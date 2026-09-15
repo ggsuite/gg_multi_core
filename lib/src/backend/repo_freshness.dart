@@ -137,6 +137,25 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
       return RepoBlocker.notAGitRepo;
     }
 
+    // A checkout that never recorded `origin/HEAD` at all — `git init` +
+    // `remote add` + `fetch`, never a real `git clone` — has no cached
+    // default to fall back on, so the feature-branch check below would
+    // judge it against neither `main` nor `master` and misjudge a
+    // repository whose real default is e.g. `develop`. Determine it now,
+    // before classifying. A checkout that already has one keeps using it
+    // for this run — it is only refreshed for the next, below — so a
+    // default that changed on the server does not retroactively flag an
+    // already-tracked branch as a feature branch mid-run.
+    if (!dryRun) {
+      final hasOriginHead = await processWrapper.run('git', [
+        'symbolic-ref',
+        'refs/remotes/origin/HEAD',
+      ], workingDirectory: directory.path);
+      if (hasOriginHead.exitCode != 0) {
+        await _refreshOriginHead(directory);
+      }
+    }
+
     if (await _isFeatureBranch.get(ggLog: ggLog, directory: directory)) {
       return RepoBlocker.featureBranch;
     }
