@@ -5,7 +5,7 @@
       "name": "base",
       "package": "helix",
       "ecosystem": null,
-      "resolvedVersion": "1.7.1",
+      "resolvedVersion": "1.8.0",
       "via": null,
       "hash": "0x6883da335b415f9d"
     },
@@ -37,7 +37,7 @@
       "name": "dna-index",
       "package": "dna_index",
       "ecosystem": "pub",
-      "resolvedVersion": "0.1.0",
+      "resolvedVersion": "0.1.1",
       "via": "dna-ggsuite",
       "hash": "0x1d92b0add37a1ac7"
     },
@@ -53,7 +53,7 @@
       "name": "dna-install",
       "package": "dna_install",
       "ecosystem": "pub",
-      "resolvedVersion": "0.1.0",
+      "resolvedVersion": "0.1.1",
       "via": "dna-ggsuite",
       "hash": "0xbe88eb4256745ee1"
     },
@@ -246,7 +246,7 @@
     "claudeMdInclude": null,
     "claudeMdFromDna": false
   },
-  "baseVersion": "1.7.1",
+  "baseVersion": "1.8.0",
   "baseHash": "0x6883da335b415f9d",
   "instances": [
     {
