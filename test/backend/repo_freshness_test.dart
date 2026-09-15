@@ -122,6 +122,31 @@ void main() {
         );
       });
 
+      test('determines the default branch of a checkout whose origin/HEAD '
+          'was never recorded, even when it is not main', () async {
+        // The remote's default moves to develop.
+        await git(local, ['push', 'origin', 'HEAD:refs/heads/develop']);
+        await git(remote, ['symbolic-ref', 'HEAD', 'refs/heads/develop']);
+
+        // Built the way an ocean copy is — `git init` + `remote add` +
+        // `fetch` + `reset --hard`, never a real `git clone` — so
+        // `origin/HEAD` was never recorded locally at all.
+        final freshCopy = Directory.systemTemp.createTempSync(
+          'freshness_fresh_',
+        );
+        addTearDown(() => freshCopy.deleteSync(recursive: true));
+        await git(freshCopy, ['init', '-b', 'develop']);
+        await git(freshCopy, ['remote', 'add', 'origin', remote.path]);
+        await git(freshCopy, ['fetch', 'origin']);
+        await git(freshCopy, ['reset', '--hard', 'origin/develop']);
+        await git(freshCopy, ['branch', '--set-upstream-to', 'origin/develop']);
+
+        expect(
+          await repoFreshness.get(ggLog: ggLog, directory: freshCopy),
+          isNull,
+        );
+      });
+
       test('reports uncommitted changes', () async {
         await updateSampleFileWithoutCommitting(local);
 
