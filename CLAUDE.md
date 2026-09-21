@@ -93,3 +93,19 @@ Two backends exist because a workspace resolves dependencies out of the manifest
 - **Test coverage**: 100% required. Every file under `lib/src/` must have a matching test at the same relative path under `test/`. Use `// coverage:ignore-line` and `// coverage:ignore-start/end` only when unavoidable.
 - **Mocks**: Mock classes live in the same file as the class they mock.
 - **Commits/pushes**: Always go through `gg do commit` / `gg do push`, never raw `git commit` / `git push`.
+
+<!-- helix:claude_md:start -->
+
+# gg workflow
+
+This repo is developed ticket by ticket with the `gg` CLI. Follow the
+development guide, it tells you when to ask the user and which command
+comes next:
+
+@doc/guides/for-ai/ai-dev-guide.md
+
+The steps are also available as skills: `/gg-ticket`, `/gg-commit`,
+`/gg-push`, `/gg-publish`, `/gg-cleanup`. `/gg` lists them and says which
+one comes next.
+
+<!-- helix:claude_md:end -->
