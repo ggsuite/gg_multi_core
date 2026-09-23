@@ -381,7 +381,7 @@ packages:
       path: "../gg_one_core"
       relative: true
     source: path
-    version: "2.8.1"
+    version: "2.9.0"
   gg_one_do_publish:
     dependency: "direct overridden"
     description:
