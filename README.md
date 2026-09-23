@@ -14,8 +14,8 @@ the foundation the other members of the family (`gg_multi_workspace`,
 - **Workspace layout** (`workspace_utils.dart`, `constants.dart`,
   `ocean_migration.dart`, `trash.dart`): the three folders at a
   workspace root — `.ocean/` (all registered repos), `tickets/<id>/`
-  (per-ticket clones) and `.trash/<id>/` (closed tickets, moved, never
-  deleted) — plus `WorkspaceUtils.detectTicketPath()`, which finds the
+  (per-ticket clones) and `.trash/<id>/` (closed tickets, moved rather
+  than deleted, and swept after 30 days) — plus `WorkspaceUtils.detectTicketPath()`, which finds the
   context from any working directory, and the automatic `.master` →
   `.ocean` rename for legacy workspaces.
 - **Organization folders** (`repo_folder_resolver.dart`,

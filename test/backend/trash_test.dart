@@ -337,5 +337,177 @@ void main() {
         },
       );
     });
+
+    group('expire', () {
+      /// Puts a folder into the trash and backdates its arrival by [age].
+      Directory trashed(String name, {Duration? age}) {
+        final dir = Directory(path.join(root.path, '.trash', name))
+          ..createSync(recursive: true);
+        File(path.join(dir.path, 'keep.txt')).writeAsStringSync('keep');
+        if (age != null) {
+          File(path.join(root.path, '.trash', Trash.indexFileName))
+              .writeAsStringSync(
+                '{"$name":"'
+                '${DateTime.now().toUtc().subtract(age).toIso8601String()}"}',
+              );
+        }
+        return dir;
+      }
+
+      test('answers empty when there is no trash at all', () async {
+        expect(await Trash.expire(rootPath: root.path), isEmpty);
+      });
+
+      test('removes an entry that arrived longer ago than maxAge', () async {
+        final old = trashed('T_old', age: const Duration(days: 31));
+
+        final removed = await Trash.expire(rootPath: root.path);
+
+        expect(removed, [old.path]);
+        expect(old.existsSync(), isFalse);
+      });
+
+      test('keeps an entry that is still within maxAge', () async {
+        final young = trashed('T_young', age: const Duration(days: 29));
+
+        expect(await Trash.expire(rootPath: root.path), isEmpty);
+        expect(young.existsSync(), isTrue);
+      });
+
+      test('only stamps an entry it sees for the first time', () async {
+        // Trash from before the index existed must not be deleted by the
+        // very run that discovers it.
+        final unknown = trashed('T_unknown');
+
+        expect(await Trash.expire(rootPath: root.path), isEmpty);
+        expect(unknown.existsSync(), isTrue);
+
+        // ... and it goes once maxAge has passed since that first sighting.
+        final later = DateTime.now().toUtc().add(const Duration(days: 31));
+        final removed = await Trash.expire(rootPath: root.path, now: later);
+
+        expect(removed, [unknown.path]);
+        expect(unknown.existsSync(), isFalse);
+      });
+
+      test(
+        'measures the time in the trash, not the age of the files',
+        () async {
+          // A ticket whose files were last touched a year ago is fresh trash
+          // the second it is moved — the index is what says so.
+          File(path.join(ticketDir.path, 'ticket.json'))
+              .writeAsStringSync('{}');
+          await Trash.moveTicketToTrash(ticketDir: ticketDir);
+
+          expect(await Trash.expire(rootPath: root.path), isEmpty);
+          expect(
+            Directory(path.join(root.path, '.trash', 'T1')).existsSync(),
+            isTrue,
+          );
+        },
+      );
+
+      test(
+        'expires ocean repos one by one and prunes what is left empty',
+        () async {
+          final ocean = path.join(root.path, '.trash', '.ocean');
+          final stale = Directory(path.join(ocean, 'ggsuite', 'gg_old'))
+            ..createSync(recursive: true);
+          final fresh = Directory(path.join(ocean, 'ggsuite', 'gg_new'))
+            ..createSync(recursive: true);
+          final now = DateTime.now().toUtc();
+          File(path.join(root.path, '.trash', Trash.indexFileName))
+              .writeAsStringSync(
+                '{".ocean/ggsuite/gg_old":'
+                '"${now.subtract(const Duration(days: 40)).toIso8601String()}",'
+                '".ocean/ggsuite/gg_new":"${now.toIso8601String()}"}',
+              );
+
+          final removed = await Trash.expire(rootPath: root.path);
+
+          expect(removed, [stale.path]);
+          expect(fresh.existsSync(), isTrue);
+          // The org folder still holds gg_new, so it stays.
+          expect(Directory(path.join(ocean, 'ggsuite')).existsSync(), isTrue);
+        },
+      );
+
+      test('prunes the ocean mirror once its last repo expired', () async {
+        final ocean = path.join(root.path, '.trash', '.ocean');
+        Directory(path.join(ocean, 'ggsuite', 'gg_old'))
+            .createSync(recursive: true);
+        final long = DateTime.now()
+            .toUtc()
+            .subtract(const Duration(days: 40))
+            .toIso8601String();
+        File(path.join(root.path, '.trash', Trash.indexFileName))
+            .writeAsStringSync('{".ocean/ggsuite/gg_old":"$long"}');
+
+        await Trash.expire(rootPath: root.path);
+
+        expect(Directory(ocean).existsSync(), isFalse);
+      });
+
+      test('removes a trashed file, not just folders', () async {
+        // `do publish` trashes the ticket's `.code-workspace` beside it.
+        final file = File(path.join(root.path, '.trash', 'T1.code-workspace'))
+          ..createSync(recursive: true)
+          ..writeAsStringSync('{}');
+        final long = DateTime.now()
+            .toUtc()
+            .subtract(const Duration(days: 40))
+            .toIso8601String();
+        File(path.join(root.path, '.trash', Trash.indexFileName))
+            .writeAsStringSync('{"T1.code-workspace":"$long"}');
+
+        final removed = await Trash.expire(rootPath: root.path);
+
+        expect(removed, [file.path]);
+        expect(file.existsSync(), isFalse);
+      });
+
+      test('honours a maxAge of its own', () async {
+        final old = trashed('T_old', age: const Duration(days: 2));
+
+        final removed = await Trash.expire(
+          rootPath: root.path,
+          maxAge: const Duration(days: 1),
+        );
+
+        expect(removed, [old.path]);
+      });
+
+      test('forgets what is no longer in the trash', () async {
+        trashed('T_gone', age: const Duration(days: 1));
+        Directory(path.join(root.path, '.trash', 'T_gone'))
+            .deleteSync(recursive: true);
+
+        await Trash.expire(rootPath: root.path);
+
+        final index = File(path.join(root.path, '.trash', Trash.indexFileName));
+        expect(index.existsSync(), isFalse);
+      });
+
+      test('starts over when the index is corrupt', () async {
+        final entry = trashed('T1');
+        File(path.join(root.path, '.trash', Trash.indexFileName))
+            .writeAsStringSync('not json at all');
+
+        expect(await Trash.expire(rootPath: root.path), isEmpty);
+        expect(entry.existsSync(), isTrue);
+      });
+
+      test('ignores the index file itself', () async {
+        trashed('T1', age: const Duration(days: 40));
+
+        await Trash.expire(rootPath: root.path);
+
+        // The index was rewritten, not deleted as an expired entry.
+        expect(
+          Directory(path.join(root.path, '.trash', 'T1')).existsSync(),
+          isFalse,
+        );
+      });
+    });
   });
 }
