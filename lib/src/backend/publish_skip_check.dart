@@ -16,6 +16,7 @@ import 'package:pub_semver/pub_semver.dart';
 import 'package:pubspec_parse/pubspec_parse.dart';
 
 import 'package:gg_git/gg_git.dart';
+import 'package:gg_multi_core/src/backend/npm_version_range.dart';
 
 /// The outcome of [PublishSkipCheck.get] for one ticket repository.
 class PublishSkipDecision {
@@ -28,6 +29,25 @@ class PublishSkipDecision {
   /// Why the repository can be skipped ([skip] is true) or why it has to be
   /// published ([skip] is false).
   final String reason;
+}
+
+/// The version constraint a repository publishes for one dependency, together
+/// with the dialect it is written in — pub and npm read the same characters
+/// differently (see [NpmVersionRange]).
+class _PublishedConstraint {
+  const _PublishedConstraint(this.constraint, {required this.isNpm});
+
+  final VersionConstraint constraint;
+
+  final bool isNpm;
+
+  /// Whether a consumer resolving this constraint may receive [version].
+  bool allows(Version version) => isNpm
+      ? NpmVersionRange.allows(constraint, version)
+      : constraint.allows(version);
+
+  @override
+  String toString() => constraint.toString();
 }
 
 /// Decides whether a ticket repository needs to be published at all.
@@ -174,17 +194,11 @@ class PublishSkipCheck {
   /// Dev dependencies are excluded on purpose: registries ignore them when
   /// resolving consumers of the published package.
   Set<String> _regularDependencyNames(Directory repoDir) {
-    final result = <String>{};
+    final result = _npmDependencyNames(repoDir);
 
     final pubspec = _parsedPubspec(repoDir);
     if (pubspec != null) {
       result.addAll(pubspec.dependencies.keys);
-    }
-
-    final packageJson = _parsedPackageJson(repoDir);
-    final npmDeps = packageJson?['dependencies'];
-    if (npmDeps is Map<String, dynamic>) {
-      result.addAll(npmDeps.keys);
     }
 
     return result;
@@ -193,27 +207,41 @@ class PublishSkipCheck {
   // ...........................................................................
   /// The version constraints [repoDir] publishes for [names].
   ///
-  /// The specs backed up by gg_localize_refs are authoritative — they hold
-  /// the original refs while the manifest may be localized to path/git refs.
-  /// Names without a backup entry fall back to the constraint currently
-  /// declared in the manifest. A null value means the constraint could not
-  /// be determined.
-  Map<String, VersionConstraint?> _declaredConstraints(
+  /// The specs backed up by gg_localize_refs come first — they hold the
+  /// original refs while the manifest may be localized to path/git refs.
+  /// A name without a backup entry, or with one that carries no version
+  /// constraint, falls back to the constraint currently declared in the
+  /// manifest. The second case is the rule for pnpm-managed TypeScript:
+  /// its refs are redirected through the overrides of pnpm-workspace.yaml,
+  /// so package.json keeps the published range the whole time, while a
+  /// backup — if there is one at all — may hold nothing but a `link:` ref.
+  /// A null value means the constraint could not be determined.
+  Map<String, _PublishedConstraint?> _declaredConstraints(
     Directory repoDir,
     Set<String> names,
   ) {
     final manifest = _manifestConstraints(repoDir);
     final saved = _savedDependencySpecs(repoDir);
+    final npmNames = _npmDependencyNames(repoDir);
 
-    final result = <String, VersionConstraint?>{};
+    final result = <String, _PublishedConstraint?>{};
     for (final name in names) {
-      if (saved.containsKey(name)) {
-        result[name] = _constraintFromSpec(saved[name]);
-      } else {
-        result[name] = manifest[name];
-      }
+      final isNpm = npmNames.contains(name);
+      final constraint =
+          _constraintFromSpec(saved[name], isNpm: isNpm) ?? manifest[name];
+      result[name] = constraint == null
+          ? null
+          : _PublishedConstraint(constraint, isNpm: isNpm);
     }
     return result;
+  }
+
+  // ...........................................................................
+  /// The names [repoDir] declares as regular dependencies in package.json.
+  /// Their constraints are npm ranges, whichever file they are read from.
+  Set<String> _npmDependencyNames(Directory repoDir) {
+    final npmDeps = _parsedPackageJson(repoDir)?['dependencies'];
+    return npmDeps is Map<String, dynamic> ? npmDeps.keys.toSet() : <String>{};
   }
 
   // ...........................................................................
@@ -236,7 +264,7 @@ class PublishSkipCheck {
     final npmDeps = packageJson?['dependencies'];
     if (npmDeps is Map<String, dynamic>) {
       for (final entry in npmDeps.entries) {
-        final constraint = _tryParseConstraint(entry.value?.toString());
+        final constraint = NpmVersionRange.tryParse(entry.value?.toString());
         if (constraint != null) {
           result[entry.key] = constraint;
         }
@@ -286,18 +314,16 @@ class PublishSkipCheck {
   // ...........................................................................
   /// Extracts the version constraint from a backed-up dependency [spec] —
   /// either a plain string (`^1.2.3`) or a map carrying a `version` key
-  /// (git dependencies). Returns null when there is none or it is unparsable.
-  VersionConstraint? _constraintFromSpec(dynamic spec) {
-    if (spec is String) {
-      return _tryParseConstraint(spec);
+  /// (git dependencies). [isNpm] selects the dialect the string is read in.
+  /// Returns null when there is none or it is unparsable.
+  VersionConstraint? _constraintFromSpec(dynamic spec, {required bool isNpm}) {
+    final raw = spec is Map ? spec['version'] : spec;
+    if (raw == null) {
+      return null;
     }
-    if (spec is Map) {
-      final version = spec['version'];
-      if (version != null) {
-        return _tryParseConstraint(version.toString());
-      }
-    }
-    return null;
+    return isNpm
+        ? NpmVersionRange.tryParse(raw.toString())
+        : _tryParseConstraint(raw.toString());
   }
 
   // ...........................................................................

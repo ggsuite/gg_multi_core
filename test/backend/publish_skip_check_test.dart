@@ -942,7 +942,7 @@ void main() {
         );
       });
 
-      test('publishes for an unparsable npm range', () async {
+      test('publishes for a package.json spec that is no range', () async {
         final depDir = createPlainRepo(
           'a',
           packageJsonContent: '{"name": "@org/a", "version": "1.0.0"}',
@@ -951,7 +951,7 @@ void main() {
           'b',
           packageJsonContent:
               '{"name": "@org/b",'
-              ' "dependencies": {"@org/a": "~1.0.0"}}',
+              ' "dependencies": {"@org/a": "link:../a"}}',
         );
         final repo = node('@org/b', dir);
         repo.dependencies['@org/a'] = node('@org/a', depDir);
@@ -963,6 +963,127 @@ void main() {
         expect(decision.skip, isFalse);
         expect(decision.reason, contains('could be determined'));
       });
+
+      test('reads package.json ranges the npm way', () async {
+        final depDir = createPlainRepo(
+          'a',
+          packageJsonContent: '{"name": "@org/a", "version": "1.0.0"}',
+        );
+
+        // The decision for `b` declaring [range] once `a` moved to [version]:
+        // true when the range still covers it.
+        var count = 0;
+        Future<bool> covers(String range, String version) async {
+          final dir = createPlainRepo(
+            'b${count++}',
+            packageJsonContent:
+                '{"name": "@org/b",'
+                ' "dependencies": {"@org/a": "$range"}}',
+          );
+          final repo = node('@org/b', dir);
+          repo.dependencies['@org/a'] = node('@org/a', depDir);
+          final decision = await check.get(
+            repo: repo,
+            refVersions: {'@org/a': version},
+          );
+          // A covered version passes the dependency check and then fails at
+          // the git history of the plain folder.
+          return decision.reason.contains('git history could not be inspected');
+        }
+
+        // pub's dialect cannot parse these at all.
+        expect(await covers('~1.0.0', '1.0.1'), isTrue);
+        expect(await covers('~1.0.0', '1.1.0'), isFalse);
+        expect(await covers('1.x', '1.4.0'), isTrue);
+        expect(await covers('>=1.0.0 <2.0.0 || ^3.0.0', '3.1.0'), isTrue);
+
+        // pub reads `^0.0.3` as <0.1.0, npm as the pin it is.
+        expect(await covers('^0.0.3', '0.0.4'), isFalse);
+        expect(await covers('^0.0.3', '0.0.3'), isTrue);
+
+        // An exact pin — what gg writes for a dependency declared as one.
+        expect(await covers('1.0.0', '1.0.0'), isTrue);
+        expect(await covers('1.0.0', '1.0.1'), isFalse);
+
+        // npm admits no prerelease a range does not name.
+        expect(await covers('^1.0.0', '1.1.0-beta.1'), isFalse);
+      });
+
+      test('falls back to package.json when the backup holds no range, '
+          'as for pnpm-localized refs', () async {
+        final depDir = createPlainRepo(
+          'a',
+          packageJsonContent: '{"name": "@org/a", "version": "1.0.0"}',
+        );
+        final dir = createPlainRepo(
+          'b',
+          packageJsonContent:
+              '{"name": "@org/b",'
+              ' "dependencies": {"@org/a": "^1.0.0"}}',
+        );
+        // pnpm redirects the ref through pnpm-workspace.yaml, package.json
+        // keeps the published range — and the backup only knows a link.
+        File(path.join(dir.path, '.gg_localize_refs_backup.json'))
+            .writeAsStringSync('{"@org/a": "link:../a"}');
+        final repo = node('@org/b', dir);
+        repo.dependencies['@org/a'] = node('@org/a', depDir);
+
+        final compatible = await check.get(
+          repo: repo,
+          refVersions: {'@org/a': '1.4.0'},
+        );
+        expect(
+          compatible.reason,
+          contains('git history could not be inspected'),
+        );
+
+        final breaking = await check.get(
+          repo: repo,
+          refVersions: {'@org/a': '2.0.0'},
+        );
+        expect(breaking.skip, isFalse);
+        expect(breaking.reason, contains('outside the published constraint'));
+      });
+
+      test(
+        'prefers the range backed up for a localized package.json',
+        () async {
+          final depDir = createPlainRepo(
+            'a',
+            packageJsonContent: '{"name": "@org/a", "version": "1.0.0"}',
+          );
+          final dir = createPlainRepo(
+            'b',
+            packageJsonContent:
+                '{"name": "@org/b",'
+                ' "dependencies": {"@org/a": "file:../a"}}',
+          );
+          Directory(path.join(dir.path, '.gg')).createSync();
+          File(path.join(dir.path, '.gg', 'gg_localize_refs_backup_ts.json'))
+              .writeAsStringSync('{"@org/a": "~1.2.0"}');
+          final repo = node('@org/b', dir);
+          repo.dependencies['@org/a'] = node('@org/a', depDir);
+
+          final compatible = await check.get(
+            repo: repo,
+            refVersions: {'@org/a': '1.2.5'},
+          );
+          expect(
+            compatible.reason,
+            contains('git history could not be inspected'),
+          );
+
+          final breaking = await check.get(
+            repo: repo,
+            refVersions: {'@org/a': '1.3.0'},
+          );
+          expect(breaking.skip, isFalse);
+          expect(
+            breaking.reason,
+            contains('outside the published constraint »>=1.2.0 <1.3.0«'),
+          );
+        },
+      );
 
       test('resolves the new version through dependency aliases', () async {
         final depDir = createPlainRepo('a_dart', pubspecContent: 'name: a\n');
