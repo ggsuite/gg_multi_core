@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Skip unchanged TypeScript packages on publish: read package.json ranges with npm semantics, fall back to the manifest when a backed-up spec carries no range
+
 ## 4.7.1 - 2026-09-23
 
 ## 4.7.0 - 2026-09-23
