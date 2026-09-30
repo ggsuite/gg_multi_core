@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.8.0 - 2026-09-30
+
+### Changed
+
+- Retry the remaining git network commands: the remote branch deletion of cleanUpTicket and the origin/HEAD refresh of RepoFreshness run through gg_git's GitRetry
+
 ## 4.7.2 - 2026-09-30
 
 ### Changed

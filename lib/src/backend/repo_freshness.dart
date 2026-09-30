@@ -89,6 +89,7 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
     Fetch? fetch,
     IsCommitted? isCommitted,
     IsFeatureBranch? isFeatureBranch,
+    this._gitRetry = const GitRetry(),
   }) : _fetch = fetch ?? Fetch(ggLog: ggLog),
        _isCommitted = isCommitted ?? IsCommitted(ggLog: ggLog),
        _isFeatureBranch = isFeatureBranch ?? IsFeatureBranch(ggLog: ggLog),
@@ -269,25 +270,31 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
   final Fetch _fetch;
   final IsCommitted _isCommitted;
   final IsFeatureBranch _isFeatureBranch;
+  final GitRetry _gitRetry;
 
   // ...........................................................................
-  /// Runs git with [args] in [directory] and returns its trimmed output.
   /// `git fetch` leaves `origin/HEAD` as the clone recorded it, so a
   /// repository whose default branch was renamed on the server keeps pointing
   /// at the old name — and the new default would pass as a feature branch on
   /// the next run. `set-head --auto` asks the remote for the current one. It
   /// is not allowed to fail the update: the fetch just before reached the
   /// remote, and a remote that cannot answer this leaves things as they are.
+  /// A connection the remote drops is retried.
   Future<void> _refreshOriginHead(Directory directory) async {
-    await processWrapper.run('git', [
-      'remote',
-      'set-head',
-      'origin',
-      '--auto',
-    ], workingDirectory: directory.path);
+    await _gitRetry.run(
+      () => processWrapper.run('git', [
+        'remote',
+        'set-head',
+        'origin',
+        '--auto',
+      ], workingDirectory: directory.path),
+      ggLog: ggLog,
+      description: 'git remote set-head origin --auto',
+    );
   }
 
   // ...........................................................................
+  /// Runs git with [args] in [directory] and returns its trimmed output.
   Future<String> _git(Directory directory, List<String> args) async {
     final result = await processWrapper.run(
       'git',

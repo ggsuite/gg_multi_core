@@ -7,6 +7,7 @@
 import 'dart:io';
 
 import 'package:gg_console_colors/gg_console_colors.dart';
+import 'package:gg_git/gg_git.dart' show GitRetry;
 import 'package:gg_multi_core/src/backend/ticket_cleanup.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
@@ -89,6 +90,42 @@ void main() {
       }
 
       expect(deletedBranches, ['push origin --delete T1']);
+    });
+
+    test('retries a branch deletion the remote dropped', () async {
+      final repoA = repo('ggsuite', 'a');
+      var calls = 0;
+
+      await cleanUpTicket(
+        ticketDir: ticketDir,
+        repoDirs: [repoA],
+        deleteRemoteBranch: true,
+        ggLog: messages.add,
+        taskLog: taskMessages.add,
+        gitRetry: GitRetry.example,
+        processRunner:
+            (
+              String executable,
+              List<String> arguments, {
+              String? workingDirectory,
+              Map<String, String>? environment,
+              bool? runInShell,
+            }) async => ++calls == 1
+            ? ProcessResult(
+                0,
+                128,
+                '',
+                'Connection to github.com closed by remote host.',
+              )
+            : ProcessResult(0, 0, '', ''),
+      );
+
+      expect(calls, 2);
+      expect(Directory(trashPath()).existsSync(), isTrue);
+      expect(
+        taskMessages.join('\n'),
+        contains('failed with a transient network error'),
+      );
     });
 
     test('deletes the remote branches, moves the whole ticket folder to the '
