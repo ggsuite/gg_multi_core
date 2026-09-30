@@ -43,6 +43,7 @@ Future<void> cleanUpTicket({
   required GgLog ggLog,
   required GgLog taskLog,
   ProcessRunner? processRunner,
+  GitRetry gitRetry = const GitRetry(),
 }) async {
   final runner = processRunner ?? defaultProcessRunner;
 
@@ -83,6 +84,7 @@ Future<void> cleanUpTicket({
         branchName: ticketName,
         ggLog: taskLog,
         processRunner: runner,
+        gitRetry: gitRetry,
       );
     } catch (e) {
       allBranchesHandled = false;
@@ -133,20 +135,26 @@ Future<void> cleanUpTicket({
   ggLog(cCmd('  cd $workspaceRoot'));
 }
 
-/// Deletes the remote feature branch [branchName] for [repoDir].
+/// Deletes the remote feature branch [branchName] for [repoDir]. A push the
+/// remote drops is retried by [gitRetry].
 Future<void> _deleteRemoteBranch({
   required Directory repoDir,
   required String branchName,
   required GgLog ggLog,
   required ProcessRunner processRunner,
+  required GitRetry gitRetry,
 }) async {
   final repoName = path.basename(repoDir.path);
-  final result = await processRunner('git', <String>[
-    'push',
-    'origin',
-    '--delete',
-    branchName,
-  ], workingDirectory: repoDir.path);
+  final result = await gitRetry.run(
+    () => processRunner('git', <String>[
+      'push',
+      'origin',
+      '--delete',
+      branchName,
+    ], workingDirectory: repoDir.path),
+    ggLog: ggLog,
+    description: 'git push origin --delete $branchName',
+  );
 
   if (result.exitCode != 0) {
     // The branch might have been deleted already, e.g. directly on GitHub.

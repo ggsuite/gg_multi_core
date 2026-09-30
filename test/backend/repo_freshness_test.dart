@@ -4,6 +4,7 @@
 // Use of this source code is governed by terms that can be
 // found in the LICENSE file in the root of this package.
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:gg_git/gg_git.dart';
@@ -89,6 +90,29 @@ void main() {
         other.deleteSync(recursive: true);
 
         expect(await repoFreshness.get(ggLog: ggLog, directory: local), isNull);
+        expect(
+          await git(local, ['symbolic-ref', 'refs/remotes/origin/HEAD']),
+          'refs/remotes/origin/develop',
+        );
+      });
+
+      test('retries a set-head the remote dropped', () async {
+        await git(local, ['remote', 'set-head', 'origin', 'main']);
+        final other = await cloneOfRemote();
+        await git(other, ['checkout', '-b', 'develop']);
+        await git(other, ['push', '--set-upstream', 'origin', 'develop']);
+        await git(remote, ['symbolic-ref', 'HEAD', 'refs/heads/develop']);
+        other.deleteSync(recursive: true);
+
+        final processWrapper = _DroppingSetHead();
+        final result = await RepoFreshness(
+          ggLog: ggLog,
+          processWrapper: processWrapper,
+          gitRetry: GitRetry.example,
+        ).get(ggLog: ggLog, directory: local);
+
+        expect(result, isNull);
+        expect(processWrapper.setHeadCalls, 2);
         expect(
           await git(local, ['symbolic-ref', 'refs/remotes/origin/HEAD']),
           'refs/remotes/origin/develop',
@@ -373,4 +397,40 @@ class _AlwaysTrue extends IsCommitted {
     required GgLog ggLog,
     required Directory directory,
   }) async => true;
+}
+
+/// Drops the first `git remote set-head` like a throttling remote does.
+class _DroppingSetHead extends GgProcessWrapper {
+  int setHeadCalls = 0;
+
+  @override
+  Future<ProcessResult> run(
+    String executable,
+    List<String> arguments, {
+    String? workingDirectory,
+    Map<String, String>? environment,
+    bool includeParentEnvironment = true,
+    bool runInShell = false,
+    Encoding? stdoutEncoding,
+    Encoding? stderrEncoding,
+  }) async {
+    if (arguments.contains('set-head') && ++setHeadCalls == 1) {
+      return ProcessResult(
+        0,
+        128,
+        '',
+        'Connection to github.com closed by remote host.',
+      );
+    }
+    return super.run(
+      executable,
+      arguments,
+      workingDirectory: workingDirectory,
+      environment: environment,
+      includeParentEnvironment: includeParentEnvironment,
+      runInShell: runInShell,
+      stdoutEncoding: stdoutEncoding,
+      stderrEncoding: stderrEncoding,
+    );
+  }
 }
