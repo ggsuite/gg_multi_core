@@ -285,6 +285,24 @@ void main() {
         );
       });
 
+      test(
+        'skips when a manual commit only writes a CHANGELOG entry',
+        () async {
+          // `gg do commit` used to leave exactly this behind in a repo gg
+          // itself had touched. A release for it serves nobody.
+          final dir = await createRepo('a');
+          await git(dir, ['update-ref', 'refs/remotes/origin/main', 'main']);
+          await git(dir, ['checkout', '-b', 'feat']);
+          await commitFile(dir, 'CHANGELOG.md', '# Changelog\n', 'My commit');
+
+          final decision = await check.get(
+            repo: node('a', dir),
+            refVersions: {},
+          );
+          expect(decision.skip, isTrue);
+        },
+      );
+
       test('publishes when the feature branch has a manual commit', () async {
         final dir = await createRepo('a');
         await git(dir, ['checkout', '-b', 'feat']);

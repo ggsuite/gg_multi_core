@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- gg do commit does nothing when only system commits exist
+
 ## 4.8.0 - 2026-09-30
 
 ### Changed
