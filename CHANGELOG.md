@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.9.0 - 2026-10-05
+
+### Changed
+
+- `PublishSkipCheck` reads the history through the shared
+`ContributedCommits` of gg_one_core, and a commit that touches nothing but
+derived files (`CHANGELOG.md`, `.gg/`, lock files) no longer blocks the skip,
+whatever its message says
+
 ## 4.8.0 - 2026-09-30
 
 ### Changed
