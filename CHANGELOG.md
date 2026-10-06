@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.9.2 - 2026-10-06
+
+### Changed
+
+- Merge main
+- Upgrade_dependencies
+
 ## 4.9.1 - 2026-10-06
 
 ### Changed
