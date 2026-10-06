@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Ask each publish question only once
+
 ## 4.9.0 - 2026-10-05
 
 ### Changed
