@@ -364,10 +364,12 @@ class PublishPlanner {
 
       if (doesPublish) {
         // A reconfiguring pass asks EVERY time, with the recorded answers
-        // pre-selected — that is what re-running `gg do review` or
-        // `gg do configure-publish` means. Every other pass asks only what
-        // the configuration leaves open, so a `gg do publish` right after a
-        // review does not ask the very questions the review just answered.
+        // pre-selected — that is what `gg do review --reask-version` and
+        // `gg do configure-publish` mean. Every other pass asks only what
+        // the configuration leaves open: a `gg do publish` right after a
+        // review does not ask the very questions the review just answered,
+        // and a run that stopped after the version question asks only the
+        // merge message again.
         final answered = _configAnswers(repoConfig, mergeOnly);
         if ((reconfigure || !answered) &&
             _canAsk(
@@ -388,6 +390,7 @@ class PublishPlanner {
                 : repoConfig.mergeMessage ?? ticketSeed,
             existing: repoConfig,
             mergeOnly: mergeOnly,
+            onlyMissing: !reconfigure,
           );
           repoConfig = asked.config;
           configs[repoName] = repoConfig;
@@ -467,53 +470,72 @@ class PublishPlanner {
   ///
   /// No repository header is logged here; the caller owns it, because it
   /// alone knows whether it has something to say about this repo at all.
+  ///
+  /// [onlyMissing] skips every question [existing] already answers — the
+  /// recorded answer is used as it is. Without it every question is asked,
+  /// with the recorded answer pre-selected.
+  ///
+  /// Every answer is written to the repository's `publish_config.json` the
+  /// moment it is given, so a run that stops at a later question — Ctrl-C,
+  /// a failing repository further down — never asks it again.
   Future<RepoPublishPlan> configureRepo({
     required Directory repoDir,
     required String seedMessage,
     gg.RepoPublishConfig? existing,
     bool mergeOnly = false,
+    bool onlyMissing = false,
   }) async {
     final repoName = path.basename(repoDir.path);
     final baseline = await _baselineVersion(repoDir);
+    final configFile = gg.repoPublishConfigFile(repoDir);
+    var answers = existing ?? gg.RepoPublishConfig();
 
     // A merge-only run releases nothing — no version bump, no changelog
     // heading, no tag. Asking for an increment would offer a version that
     // is never created, so the prompt is skipped and none is stored.
-    final increment = mergeOnly
-        ? null
-        : await _versionSelector.selectIncrement(
-            currentVersion: baseline,
-            preselect: existing?.versionIncrement,
-          );
+    final recordedIncrement = existing?.versionIncrement;
+    var increment = mergeOnly ? null : recordedIncrement;
+    if (!mergeOnly && (!onlyMissing || increment == null)) {
+      increment = await _versionSelector.selectIncrement(
+        currentVersion: baseline,
+        preselect: recordedIncrement,
+      );
+      answers = answers.copyWith(versionIncrement: increment);
+      await answers.save(file: configFile);
+    }
 
     // The seed pre-fills the editor. The caller resolved it — an explicit
     // `-m` beats a recorded answer, which beats the ticket description — so
     // only a caller that supplies none falls back to the recorded answer
     // here. A merge message must never be empty, so an empty edit falls back
     // to the same seed and finally to a generic default.
-    final seed = seedMessage.isEmpty
-        ? (existing?.mergeMessage ?? '')
-        : seedMessage;
-    var message = (await _editMessage(seed) ?? '').trim();
-    if (message.isEmpty) {
-      message = seed;
-    }
-    if (message.isEmpty) {
-      message = 'Publish $repoName';
+    final recordedMessage = existing?.mergeMessage;
+    String message;
+    if (onlyMissing && recordedMessage != null) {
+      message = recordedMessage;
+    } else {
+      final seed = seedMessage.isEmpty ? (recordedMessage ?? '') : seedMessage;
+      message = (await _editMessage(seed) ?? '').trim();
+      if (message.isEmpty) {
+        message = seed;
+      }
+      if (message.isEmpty) {
+        message = 'Publish $repoName';
+      }
     }
 
-    return RepoPublishPlan(
-      // Built explicitly rather than via copyWith: a merge-only run must
-      // clear a recorded increment, not inherit it. The AI-maintained halves
-      // (nextCommitMessage, commits) are carried over untouched.
-      config: gg.RepoPublishConfig(
-        mergeMessage: message,
-        versionIncrement: increment,
-        nextCommitMessage: existing?.nextCommitMessage,
-        commits: existing?.commits,
-      ),
-      baseline: baseline,
+    // Built explicitly rather than via copyWith: a merge-only run must clear
+    // a recorded increment, not inherit it. The AI-maintained halves
+    // (nextCommitMessage, commits) are carried over untouched.
+    final config = gg.RepoPublishConfig(
+      mergeMessage: message,
+      versionIncrement: increment,
+      nextCommitMessage: answers.nextCommitMessage,
+      commits: answers.commits,
     );
+    await config.save(file: configFile);
+
+    return RepoPublishPlan(config: config, baseline: baseline);
   }
 
   // ...........................................................................
@@ -572,10 +594,8 @@ class PublishPlanner {
   }
 
   // ...........................................................................
-  /// Whether [config] already answers every question a run needs.
-  ///
-  /// Only consulted for the headless path — an interactive run asks anyway,
-  /// with these very values pre-selected.
+  /// Whether [config] already answers every question a run needs — then only
+  /// a reconfiguring pass asks again.
   bool _configAnswers(gg.RepoPublishConfig config, bool mergeOnly) =>
       config.mergeMessage != null &&
       (mergeOnly || config.versionIncrement != null);

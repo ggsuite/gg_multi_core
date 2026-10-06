@@ -301,6 +301,66 @@ void main() {
       expect(answer.config.mergeMessage, 'Publish A');
     });
 
+    test('records the increment before the merge message is asked', () async {
+      final dir = repoDir('A');
+      gg.RepoPublishConfig? onDisk;
+      final planner = makePlanner(
+        increments: [2],
+        editMessage: (_) async {
+          onDisk = gg.RepoPublishConfig.tryLoad(dir);
+          throw Exception('Ctrl-C');
+        },
+      );
+
+      await expectLater(
+        planner.configureRepo(repoDir: dir, seedMessage: 'Seed'),
+        throwsA(isA<Exception>()),
+      );
+
+      expect(onDisk!.versionIncrement, VersionIncrement.major);
+      expect(
+        gg.RepoPublishConfig.tryLoad(dir)!.versionIncrement,
+        VersionIncrement.major,
+      );
+    });
+
+    test('writes the answers and keeps what the AI recorded', () async {
+      final dir = repoDir('A');
+      final next = gg.CommitMessage(firstLine: 'Pending work');
+      final planner = makePlanner(increments: [0]);
+
+      final answer = await planner.configureRepo(
+        repoDir: dir,
+        seedMessage: 'Seed',
+        existing: gg.RepoPublishConfig(nextCommitMessage: next),
+      );
+
+      final onDisk = gg.RepoPublishConfig.tryLoad(dir)!;
+      expect(onDisk.versionIncrement, VersionIncrement.patch);
+      expect(onDisk.mergeMessage, 'Seed');
+      expect(onDisk.nextCommitMessage!.firstLine, 'Pending work');
+      expect(answer.config.nextCommitMessage!.firstLine, 'Pending work');
+    });
+
+    test('onlyMissing asks nothing a recorded answer covers', () async {
+      // The empty index list would throw if the selector were asked.
+      final planner = makePlanner(increments: const []);
+
+      final answer = await planner.configureRepo(
+        repoDir: repoDir('A'),
+        seedMessage: 'Seed',
+        existing: gg.RepoPublishConfig(
+          versionIncrement: VersionIncrement.minor,
+          mergeMessage: 'Recorded',
+        ),
+        onlyMissing: true,
+      );
+
+      expect(seeds, isEmpty);
+      expect(answer.config.versionIncrement, VersionIncrement.minor);
+      expect(answer.config.mergeMessage, 'Recorded');
+    });
+
     test('assumes 0.0.0 and warns when the baseline cannot be read', () async {
       // Not even an Error may fail the run around a version preview.
       final adapter = _StubAdapter([0]);
@@ -497,7 +557,63 @@ void main() {
       );
 
       expect(adapter.capturedOptions, hasLength(1));
+      expect(seeds, isEmpty);
       expect(plan.entryFor('A')!.versionIncrement, 'major');
+      expect(plan.entryFor('A')!.mergeMessage, 'from the review');
+    });
+
+    test('does not ask a recorded increment again when only the merge '
+        'message is open', () async {
+      // The regression this guards: a run answered the version question and
+      // stopped at the merge message. The next run asks only the message.
+      final adapter = _StubAdapter(const []);
+      final planner = makePlanner(adapter: adapter);
+      await gg.RepoPublishConfig(versionIncrement: VersionIncrement.minor)
+          .save(file: gg.repoPublishConfigFile(repoDir('A')));
+
+      final plan = await planner.plan(
+        ticketDir: ticketDir,
+        subs: [node('A')],
+        ggLog: ggLog,
+        defaultMergeMessage: 'The change',
+      );
+
+      expect(adapter.capturedOptions, isEmpty);
+      expect(seeds, ['The change']);
+      expect(plan.entryFor('A')!.versionIncrement, 'minor');
+      expect(plan.entryFor('A')!.mergeMessage, 'The change');
+    });
+
+    test('keeps the answers of an earlier repo when a later repo '
+        'fails', () async {
+      // Without the immediate write the whole pass is lost and the next run
+      // asks repo A again.
+      final planner = makePlanner(
+        increments: [1],
+        editMessage: (initial) async {
+          seeds.add(initial);
+          if (seeds.length == 2) throw Exception('Ctrl-C');
+          return initial;
+        },
+      );
+
+      await expectLater(
+        planner.plan(
+          ticketDir: ticketDir,
+          subs: [node('A'), node('B')],
+          ggLog: ggLog,
+          defaultMergeMessage: 'The change',
+        ),
+        throwsA(isA<Exception>()),
+      );
+
+      final a = gg.RepoPublishConfig.tryLoad(repoDir('A'))!;
+      expect(a.versionIncrement, VersionIncrement.minor);
+      expect(a.mergeMessage, 'The change');
+      // B got its increment recorded before the merge message failed.
+      final b = gg.RepoPublishConfig.tryLoad(repoDir('B'))!;
+      expect(b.versionIncrement, VersionIncrement.minor);
+      expect(b.mergeMessage, isNull);
     });
 
     test('reconfigure asks again, with the recorded answers '
