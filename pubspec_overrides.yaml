@@ -4,6 +4,8 @@
 # change-refs-to-git-feature-branch and change-refs-to-pub-dev
 # remove it again.
 dependency_overrides:
+  gg_localize_refs:
+    path: ../gg_localize_refs
   gg_one:
     path: ../gg_one
   gg_one_commit:

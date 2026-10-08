@@ -32,6 +32,19 @@ the foundation the other members of the family (`gg_multi_workspace`,
   (never committed), the ticket-level success cache in
   `<ticket>/.gg.json`, and `cleanUpTicket`, which deletes the remote
   feature branches and moves the whole ticket folder to the trash.
+- **Ticket localization** (`ticket_localizer.dart`,
+  `repo_dependencies.dart`, `graph_package_dirs.dart`):
+  `TicketLocalizer` keeps the references between the repos of a ticket
+  pointing at their checkouts. `check` reports the refs that are not
+  localized and the ocean repos that lie between two ticket repos (over
+  regular dependency edges, dev ones are ignored) but are missing in
+  the ticket; `localizeUnlocalized` fixes the refs, installs the
+  dependencies again (`installRepoDependencies`, Flutter aware) and
+  records only gg's own changes as `#gg:` commits — the user's work,
+  including a hand-edited manifest, stays uncommitted. A missing repo
+  never blocks (the ocean can be stale): it is a warning with the hint
+  `gg do add <repo>`. `graphPackageDirs` lists the folders of the
+  ticket-shadowed dependency graph (ticket repos + unshadowed ocean).
 - **Git helpers** (`git_snapshot.dart`): `runGit` and
   `captureUncommitted`, shared by the push and publish flows.
 - **Process running** (`process_runner.dart`): the family's single
