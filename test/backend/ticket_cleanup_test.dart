@@ -218,6 +218,34 @@ void main() {
       expect(messages.last, cCmd('  cd ${root.absolute.path}'));
     });
 
+    // Regression: `do publish` started inside the ticket hands in
+    // `<ticket>/.`. The trash target became `<ticket>/.trash/.` and the
+    // copy fallback copied the ticket into itself without end.
+    test('moves a ticket spelled <ticket>/. to <root>/.trash', () async {
+      ticketDir = Directory(path.join(root.path, 'T2'))..createSync();
+      final repoA = repo('ggsuite', 'a');
+
+      await cleanUpTicket(
+        ticketDir: Directory(path.join(ticketDir.path, '.')),
+        repoDirs: [repoA],
+        deleteRemoteBranch: true,
+        ggLog: messages.add,
+        taskLog: taskMessages.add,
+        processRunner: okRunner,
+      );
+
+      expect(ticketDir.existsSync(), isFalse);
+      expect(
+        Directory(path.join(trashPath('T2'), 'ggsuite', 'a')).existsSync(),
+        isTrue,
+      );
+      expect(
+        Directory(path.join(trashPath('T2'), '.trash')).existsSync(),
+        isFalse,
+      );
+      expect(messages.last, cCmd('  cd ${root.absolute.path}'));
+    });
+
     test(
       'keeps the remote branches when deleteRemoteBranch is false',
       () async {

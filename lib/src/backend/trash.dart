@@ -51,7 +51,7 @@ class Trash {
     path.join(
       WorkspaceUtils.rootOfTicket(ticketDir),
       ggMultiTrashFolder,
-      path.basename(ticketDir.path),
+      path.basename(_normalized(ticketDir.path)),
     ),
   );
 
@@ -95,12 +95,15 @@ class Trash {
   static Future<Directory> moveTicketToTrash({
     required Directory ticketDir,
   }) async {
-    final target = dirForTicket(ticketDir);
+    // A caller inside the ticket hands in `.` or `<ticket>/.` — a spelling
+    // the rename refuses, so the move works on the plain path.
+    final source = Directory(_normalized(ticketDir.path));
+    final target = dirForTicket(source);
     if (target.existsSync() && target.listSync().isEmpty) {
       target.deleteSync();
     }
 
-    final movedTo = await _moveInto(ticketDir, target.path);
+    final movedTo = await _moveInto(source, target.path);
     return Directory(movedTo);
   }
 
@@ -137,6 +140,17 @@ class Trash {
     String targetPath,
   ) async {
     final target = _freeTarget(targetPath);
+
+    // A target inside the source would make the copy fallback copy the
+    // source into itself, level after level, until the path is too long.
+    final from = _normalized(source.path);
+    final to = _normalized(target);
+    if (path.equals(from, to) || path.isWithin(from, to)) {
+      throw FileSystemException(
+        'Cannot move a folder into itself (target: $to)',
+        from,
+      );
+    }
 
     final parent = Directory(path.dirname(target));
     if (!parent.existsSync()) {
@@ -391,6 +405,10 @@ class Trash {
       if (!_exists(candidate)) return candidate;
     }
   }
+
+  /// [entityPath] as an absolute path without `.` / `..` segments.
+  static String _normalized(String entityPath) =>
+      path.normalize(path.absolute(entityPath));
 
   /// Whether a file or a directory lives at [target].
   static bool _exists(String target) =>

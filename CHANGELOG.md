@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.9.3 - 2026-10-08
+
+### Changed
+
+- Never move a ticket into its own trash: closing a ticket from inside its folder (e.g. `gg do publish` with »Move to .trash«) copied it into a `.trash` below itself without end — it now moves to the `.trash` of the workspace root
+
 ## 4.9.2 - 2026-10-06
 
 ### Changed

@@ -157,6 +157,25 @@ void main() {
         expect(File(target).readAsStringSync(), 'second');
       });
 
+      test('refuses to move a folder into itself', () async {
+        // `<root>/.trash/T1/..` is `<root>/.trash` — inside the source.
+        await expectLater(
+          Trash.moveFromTicket(source: root, ticketDir: ticketDir),
+          throwsA(
+            isA<FileSystemException>().having(
+              (e) => e.message,
+              'message',
+              startsWith('Cannot move a folder into itself'),
+            ),
+          ),
+        );
+
+        // Nothing was copied — the ticket's trash folder stays empty.
+        expect(root.existsSync(), isTrue);
+        expect(ticketDir.existsSync(), isTrue);
+        expect(Trash.dirForTicket(ticketDir).listSync(), isEmpty);
+      });
+
       test('falls back to copy + delete when rename fails', () async {
         // A rename across volumes throws; the content must survive anyway.
         final dir = repo('ggsuite', 'gg_multi');
@@ -293,6 +312,33 @@ void main() {
           isTrue,
         );
       });
+
+      // Regression: `do publish` started inside the ticket handed in
+      // `<ticket>/.`. The target became `<ticket>/.trash/.`, the rename
+      // failed and the copy fallback copied the ticket into its own trash,
+      // level after level, without end.
+      test(
+        'moves a ticket spelled <ticket>/. next to it, not into it',
+        () async {
+          repo('ggsuite', 'gg_multi');
+
+          final target = await Trash.moveTicketToTrash(
+            ticketDir: Directory(path.join(ticketDir.path, '.')),
+          );
+
+          expect(target.path, path.join(root.path, '.trash', 'T1'));
+          expect(ticketDir.existsSync(), isFalse);
+          expect(
+            Directory(path.join(target.path, 'ggsuite', 'gg_multi'))
+                .existsSync(),
+            isTrue,
+          );
+          expect(
+            Directory(path.join(target.path, '.trash')).existsSync(),
+            isFalse,
+          );
+        },
+      );
 
       test(
         'takes the place of the empty folder do create ticket made',
