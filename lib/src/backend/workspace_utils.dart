@@ -160,11 +160,15 @@ class WorkspaceUtils {
   /// Hidden folders and closed tickets are skipped on the way up
   /// ([isTicketDir]), so a command run inside `<root>/.github` or a closed
   /// ticket in `<root>/.trash` finds no ticket.
+  ///
+  /// The path is returned normalized: `path.absolute('.')` inside a ticket
+  /// is `<ticket>/.`, and that spelling made `Directory.parent` answer the
+  /// ticket itself — the ticket was then »moved« into its own `.trash`.
   static String? detectTicketPath(String executionPath) {
     var current = Directory(executionPath);
     while (true) {
       if (isTicketDir(current) || _isLegacyTicketDir(current)) {
-        return current.path;
+        return path.normalize(current.path);
       }
       final parent = current.parent;
       if (current.path == parent.path) {
@@ -262,10 +266,10 @@ class WorkspaceUtils {
   /// A parent named `tickets` that holds a `.ocean` or `.master` is the
   /// workspace root itself (`~/work/Tickets/<ticket>`), so it is returned.
   static String rootOfTicket(Directory ticketDir) {
-    final parent = ticketDir.parent;
-    return _isLegacyTicketFolder(parent.path)
-        ? parent.parent.path
-        : parent.path;
+    // Normalized first: for `<ticket>/.` or `.`, `Directory.parent` answers
+    // the ticket itself, not the folder it sits in.
+    final parent = path.dirname(_absolute(ticketDir.path));
+    return _isLegacyTicketFolder(parent) ? path.dirname(parent) : parent;
   }
 
   /// Returns the folder of the ticket named [ticketName] in the workspace

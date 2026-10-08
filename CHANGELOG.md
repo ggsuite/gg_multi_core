@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Never move a ticket into its own trash: a ticket closed from inside it (`&lt;ticket&gt;/.`) is moved to `&lt;root&gt;/.trash/&lt;ticket&gt;` instead of being copied into itself without end
+
 ## 4.9.2 - 2026-10-06
 
 ### Changed

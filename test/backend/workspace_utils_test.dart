@@ -567,6 +567,19 @@ void main() {
       expect(WorkspaceUtils.detectTicketPath(repoDir.path), ticketDir.path);
     });
 
+    // Regression: `do publish` resolves `path.absolute('.')`, which inside a
+    // ticket is `<ticket>/.`. Handed on as it was, its `Directory.parent` is
+    // the ticket itself, and closing the ticket copied it into its own
+    // `.trash` — level after level.
+    test('returns the ticket normalized when started as <ticket>/.', () {
+      final ticketDir = makeTicket(tempRoot, 'T1');
+
+      expect(
+        WorkspaceUtils.detectTicketPath(path.join(ticketDir.path, '.')),
+        ticketDir.path,
+      );
+    });
+
     test('does not mistake the workspace root for a ticket', () async {
       Directory(path.join(tempRoot.path, ggMultiOceanFolder))
           .createSync(recursive: true);
@@ -1064,6 +1077,28 @@ void main() {
       test('is the parent of a ticket in the root', () {
         final ticket = makeTicket(tempRoot, 'T1');
         expect(WorkspaceUtils.rootOfTicket(ticket), tempRoot.path);
+      });
+
+      test('is the parent of a ticket spelled <ticket>/. or relative', () {
+        final ticket = makeTicket(tempRoot, 'T1');
+        expect(
+          WorkspaceUtils.rootOfTicket(Directory(path.join(ticket.path, '.'))),
+          tempRoot.path,
+        );
+
+        final cwd = Directory.current;
+        try {
+          Directory.current = ticket;
+          expect(
+            path.equals(
+              WorkspaceUtils.rootOfTicket(Directory('.')),
+              Directory.current.parent.path,
+            ),
+            isTrue,
+          );
+        } finally {
+          Directory.current = cwd;
+        }
       });
 
       test('skips the legacy tickets folder', () {
