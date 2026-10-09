@@ -12,8 +12,10 @@ dependencies:
   gg_git: ^4.5.4
   gg_lang: ^0.8.2
   gg_local_package_dependencies: ^4.2.2
+  gg_localize_refs: ^5.0.3
   gg_log: ^1.2.0
   gg_one: ^14.4.7
+  gg_one_core: ^2.12.1
   gg_publish: ^4.10.1
   http: ^1.6.0
   mocktail: ^1.0.5
