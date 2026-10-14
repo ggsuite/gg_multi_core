@@ -405,8 +405,9 @@ void main() {
       // Both verdicts are reported per repo.
       expect(
         messages.join('\n'),
-        contains('Not published. Nothing changed. Skip publishing.'),
+        contains('✓ Nothing changed. Skip publishing.'),
       );
+      expect(messages.join('\n'), isNot(contains('Not published.')));
     });
 
     test('--publish-unchanged publishes every repo', () async {
@@ -785,6 +786,7 @@ void main() {
   group('PublishPlanWording', () {
     test('carries one wording per flow', () {
       expect(PublishPlanWording.publish.done, 'published');
+      expect(PublishPlanWording.publish.skipPrefix, isEmpty);
       expect(PublishPlanWording.merge.action, 'merge');
       expect(PublishPlanWording.merge.command, 'gg do publish --merge-only');
       expect(

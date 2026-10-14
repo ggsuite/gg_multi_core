@@ -100,7 +100,8 @@ class PublishPlanWording {
   /// error.
   final String command;
 
-  /// How the per-repo skip line starts, before the reason.
+  /// How the per-repo skip line starts, before the reason. Empty when the
+  /// reason alone says it all.
   final String skipPrefix;
 
   /// Wording of a regular `gg do publish` run.
@@ -108,7 +109,7 @@ class PublishPlanWording {
     action: 'publish',
     done: 'published',
     command: 'gg do publish',
-    skipPrefix: 'Not published.',
+    skipPrefix: '',
   );
 
   /// Wording of a `gg do publish --merge-only` run.
@@ -397,7 +398,7 @@ class PublishPlanner {
         ggLog(
           [
             '\n${cH1(repoName)}',
-            cDetail('✓ ${wording.skipPrefix} $reason'),
+            cDetail('✓ ${'${wording.skipPrefix} $reason'.trim()}'),
           ].join('\n'),
         );
       }
