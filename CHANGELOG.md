@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.9.4 - 2026-10-14
+
+### Changed
+
+- Drop the redundant »Not published.« from the publish skip line
+
 ## 4.9.3 - 2026-10-08
 
 ### Changed
