@@ -149,7 +149,7 @@
       "name": "gg-changelog",
       "package": "gg_changelog",
       "ecosystem": "pub",
-      "resolvedVersion": "2.2.2",
+      "resolvedVersion": "2.2.3",
       "via": "gg-one-commit",
       "hash": "0x32b3537fa5495175"
     },
