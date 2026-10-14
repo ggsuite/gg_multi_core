@@ -703,6 +703,106 @@ void main() {
           expect(await status(b), isEmpty);
         },
       );
+
+      test('finds the baseline of a repo whose path is spelled '
+          'differently', () async {
+        final a = await repo('a', {
+          'pubspec.yaml': pubspec('a'),
+          'pubspec_overrides.yaml': 'dependency_overrides:\n',
+        });
+        write(a, 'pubspec_overrides.yaml', '# edited by hand\n');
+        final head = await git(a, ['rev-parse', 'HEAD']);
+        final baseline = await localizer.baseline([
+          Directory('${a.path}${path.separator}'),
+        ]);
+
+        await localizer.commit(repoDirs: [a], baseline: baseline, ggLog: ggLog);
+
+        expect(baseline.keys, [path.normalize(a.path)]);
+        expect(await git(a, ['rev-parse', 'HEAD']), head);
+        expect(await status(a), ['pubspec_overrides.yaml']);
+      });
+    });
+
+    // .........................................................................
+    group('localizeAndCommit', () {
+      /// A ticket where b (depending on c) localizes and a (depending on b)
+      /// fails: an overrides file gg cannot parse, written after the
+      /// baseline. b is on main, where gg cannot commit, with [bOnMain].
+      Future<(Directory, Directory, Map<String, RepoBaseline>)> failingA({
+        bool bOnMain = false,
+      }) async {
+        final a = await repo('a', {
+          'pubspec.yaml': pubspec('a', ['b']),
+        });
+        final b = await repo('b', {
+          'pubspec.yaml': pubspec('b', ['c']),
+        }, onMain: bOnMain);
+        await repo('c', {'pubspec.yaml': pubspec('c')});
+        final baseline = await localizer.baseline([a, b]);
+        write(a, 'pubspec_overrides.yaml', 'dependency_overrides: [');
+        return (a, b, baseline);
+      }
+
+      /// Throws the error of a failed localization of a.
+      final throwsLocalizingA = throwsA(
+        isA<Exception>().having(
+          (e) => e.toString(),
+          'message',
+          contains('Failed to localize the refs of a'),
+        ),
+      );
+
+      test('commits the repos localized before a failing one, leaves the '
+          'failing one alone and rethrows its error', () async {
+        final (a, b, baseline) = await failingA();
+        final headA = await git(a, ['rev-parse', 'HEAD']);
+        final repos = (await nodes())
+            .where((n) => path.basename(n.directory.path) != 'c')
+            .toList();
+
+        await expectLater(
+          localizer.localizeAndCommit(
+            repos: repos,
+            repoDirs: [a, b],
+            baseline: baseline,
+            ggLog: ggLog,
+          ),
+          throwsLocalizingA,
+        );
+
+        expect(overridesOf(b), contains('path: ../c'));
+        expect(
+          await git(b, ['log', '-1', '--format=%s']),
+          '#gg: changed references to path',
+        );
+        expect(await status(b), isEmpty);
+        expect(await git(a, ['rev-parse', 'HEAD']), headA);
+        expect(await status(a), contains('pubspec_overrides.yaml'));
+        expect(installs.map((i) => i.first), ['b']);
+      });
+
+      test('rethrows the error of the failing repo when committing the '
+          'others fails too', () async {
+        // gg commits exist on feature branches only.
+        final (a, b, baseline) = await failingA(bOnMain: true);
+        final repos = (await nodes())
+            .where((n) => path.basename(n.directory.path) != 'c')
+            .toList();
+
+        await expectLater(
+          localizer.localizeAndCommit(
+            repos: repos,
+            repoDirs: [a, b],
+            baseline: baseline,
+            ggLog: ggLog,
+          ),
+          throwsLocalizingA,
+        );
+
+        expect(messages, contains(startsWith('Failed to commit b: ')));
+        expect(await status(b), contains('pubspec_overrides.yaml'));
+      });
     });
 
     // .........................................................................

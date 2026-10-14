@@ -112,12 +112,12 @@ class TicketLocalizer {
   }
 
   // ...........................................................................
-  /// What each git repo of [repoDirs] looks like now, keyed by its path —
-  /// the baseline [commit] tells gg's own changes from the user's with.
+  /// What each git repo of [repoDirs] looks like now, keyed by its normalized
+  /// path — the baseline [commit] tells gg's own changes from the user's with.
   Future<Map<String, RepoBaseline>> baseline(List<Directory> repoDirs) async {
     return <String, RepoBaseline>{
       for (final dir in repoDirs.where(_isGitRepo))
-        dir.path: RepoBaseline(
+        path.normalize(dir.path): RepoBaseline(
           dirtyPaths: await _dirtyPaths(dir),
           wasCommitted: await _wasCommitted(dir),
         ),
@@ -150,6 +150,11 @@ class TicketLocalizer {
     String message = '${gg.ggCommitPrefix}changed references to path',
   }) async {
     final recordable = recordStateFor.map(path.normalize).toSet();
+    // A path spelled differently must not lose the user's dirty paths.
+    final before = <String, RepoBaseline>{
+      for (final MapEntry(:key, :value) in baseline.entries)
+        path.normalize(key): value,
+    };
     final failed = <String>[];
     for (final dir in repoDirs.where(_isGitRepo)) {
       // git refuses a partial commit here; the user's commit takes the refs.
@@ -159,7 +164,7 @@ class TicketLocalizer {
       try {
         await _commitRepo(
           dir: dir,
-          before: baseline[dir.path],
+          before: before[path.normalize(dir.path)],
           ggLog: ggLog,
           message: message,
           recordState: recordable.contains(path.normalize(dir.path)),
@@ -175,6 +180,49 @@ class TicketLocalizer {
         cError('Failed to commit the localized refs of ${failed.join(', ')}'),
       );
     }
+  }
+
+  // ...........................................................................
+  /// [localize]s [repos], then [commit]s gg's changes in [repoDirs]. When a
+  /// repo fails, the others are committed all the same before its error is
+  /// rethrown: left uncommitted, gg's edits would pass for the user's work.
+  Future<void> localizeAndCommit({
+    required List<Node> repos,
+    required List<Directory> repoDirs,
+    required Map<String, RepoBaseline> baseline,
+    required GgLog ggLog,
+    GgLog? installErrorLog,
+    Set<String> recordStateFor = const <String>{},
+    bool upgrade = false,
+  }) async {
+    Future<void> commitAllBut(String? failedRepo) => commit(
+      repoDirs: [
+        for (final dir in repoDirs)
+          if (path.normalize(dir.path) != failedRepo) dir,
+      ],
+      baseline: baseline,
+      ggLog: ggLog,
+      recordStateFor: recordStateFor,
+    );
+
+    for (final repo in repos) {
+      try {
+        await _localize(
+          repos: [repo],
+          ggLog: ggLog,
+          installErrorLog: installErrorLog ?? ggLog,
+          upgrade: upgrade,
+        );
+      } catch (_) {
+        try {
+          await commitAllBut(path.normalize(repo.directory.path));
+        } catch (_) {
+          // Logged by commit; the failed localization is the cause.
+        }
+        rethrow;
+      }
+    }
+    await commitAllBut(null);
   }
 
   // ...........................................................................
@@ -203,13 +251,13 @@ class TicketLocalizer {
       try {
         // Localizing one repo also writes into the repos it depends on.
         final repoDirs = [for (final repo in repos) repo.directory];
-        final before = await baseline(repoDirs);
-        await _localize(
+        await localizeAndCommit(
           repos: outOfSync,
+          repoDirs: repoDirs,
+          baseline: await baseline(repoDirs),
           ggLog: details.add,
           installErrorLog: ggLog,
         );
-        await commit(repoDirs: repoDirs, baseline: before, ggLog: details.add);
       } catch (_) {
         details.forEach(ggLog);
         rethrow;
