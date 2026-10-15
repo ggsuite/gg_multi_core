@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.10.0 - 2026-10-14
+
+### Added
+
+- Add TicketLocalizer to keep the refs between ticket repos localized
+
 ## 4.9.4 - 2026-10-14
 
 ### Changed

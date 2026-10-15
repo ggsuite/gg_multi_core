@@ -173,8 +173,13 @@ void main() {
         // The push flow upgrades the dependencies of every repo and records
         // the result as a »#gg:« system commit touching nothing but
         // manifests and lock files. That must not defeat the skip: an
-        // otherwise unchanged repo is still not published.
-        final dir = await createRepo('a');
+        // otherwise unchanged repo is still not published. An upgrade only
+        // moves constraints, it never adds a dependency.
+        final dir = await createRepo(
+          'a',
+          pubspecContent:
+              'name: a\nversion: 1.0.0\ndependencies:\n  x: ^1.0.0\n',
+        );
         await git(dir, ['checkout', '-b', 'feat']);
         await commitFile(
           dir,
