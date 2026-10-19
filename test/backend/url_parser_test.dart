@@ -47,6 +47,20 @@ void main() {
       expect(result.repo, 'myrepo');
     });
 
+    test('parses ssh://, git:// and the git+ URLs of npm', () {
+      for (final url in [
+        'ssh://git@github.com/myorg/myrepo.git',
+        'git://github.com/myorg/myrepo.git',
+        'git+ssh://git@github.com/myorg/myrepo.git',
+        'git+https://github.com/myorg/myrepo.git',
+      ]) {
+        final result = parser.parse(url);
+        expect(result.platformType, 'github', reason: url);
+        expect(result.org, 'myorg', reason: url);
+        expect(result.repo, 'myrepo', reason: url);
+      }
+    });
+
     test('parses GitHub org landing URL (/orgs/<org>) as org without repo', () {
       const url = 'https://github.com/orgs/myorg';
       final result = parser.parse(url);

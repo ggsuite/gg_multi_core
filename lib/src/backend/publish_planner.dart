@@ -258,7 +258,7 @@ class PublishPlanner {
        _readManifestVersion = readManifestVersion ?? defaultReadManifestVersion,
        _versionSelector = versionSelector ?? gg.VersionSelector(),
        _editMessage = editMessage ?? _defaultEditMessage,
-       _hasTerminal = hasTerminal ?? gg.defaultHasTerminal;
+       _hasTerminal = hasTerminal ?? gg.stdioHasTerminal;
 
   /// The log function
   final GgLog ggLog;
@@ -278,7 +278,7 @@ class PublishPlanner {
   /// Opens an interactive editor for a repository's merge message.
   final EditMessage _editMessage;
 
-  /// Whether stdin is a terminal — without one nobody can answer a prompt.
+  /// Whether stdin and stdout are a terminal — else nobody can answer.
   final gg.HasTerminal _hasTerminal;
 
   // ...........................................................................
@@ -298,7 +298,7 @@ class PublishPlanner {
   ///
   /// [ask] turns the questions off altogether — the pass then only decides
   /// which repositories publish. [requireAnswers] decides what happens when a
-  /// repository needs an answer and stdin is no terminal: `gg do publish`
+  /// repository needs an answer and there is no terminal: `gg do publish`
   /// fails (it cannot release without an increment), `gg do review` passes
   /// false and leaves the question to the publish — its own job, filtering the
   /// pull requests, needs no answer.
@@ -614,7 +614,7 @@ class PublishPlanner {
     throw Exception(
       cError(
         '$repoName needs a ${wording.action}, but no version increment / '
-        'merge message is configured and stdin is no terminal.\n'
+        'merge message is configured and stdin or stdout is no terminal.\n'
         'Provide one of:\n'
         '  - ${cCmd('gg do configure-publish')} (interactively, then re-run)\n'
         '  - ${cCmd('${wording.command} --config <file>')}',

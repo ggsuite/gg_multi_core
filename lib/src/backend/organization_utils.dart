@@ -113,7 +113,7 @@ class OrganizationUtils {
   }
 
   /// Extracts the organization from a git repo URL (SSH or HTTP).
-  /// Only accepts names with [a-z0-9_-]. Returns null for other patterns.
+  /// Only accepts names with [A-Za-z0-9_-]. Returns null for other patterns.
   static Organization? extractOrganizationFromUrl(String url) {
     // Normalize URL: remove trailing "/" and "#"
     var cleanedUrl = url;
@@ -219,9 +219,9 @@ class OrganizationUtils {
     return Organization(name: org, url: baseUrl, projectName: project);
   }
 
-  /// Returns true if name is valid organization name: [a-z0-9_-] only.
+  /// Returns true if name is valid organization name: [A-Za-z0-9_-] only.
   static bool _isValidOrgName(String? name) =>
-      name != null && RegExp(r'^[a-z0-9_-]+').hasMatch(name);
+      name != null && RegExp(r'^[A-Za-z0-9_-]+').hasMatch(name);
 
   /// Builds the base URL for an organization
   static String buildBaseUrl(String repoUrl, String org, [String? project]) {

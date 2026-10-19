@@ -31,18 +31,21 @@ class UrlParser {
 
   /// Parses the given targetArg and returns ParseResult
   ParseResult parse(String targetArg) {
-    // Clean trailing '/' and '#'
-    var cleaned = targetArg;
+    // Clean trailing '/' and '#', and the `git+` npm puts before a URL
+    var cleaned = targetArg.startsWith('git+')
+        ? targetArg.substring('git+'.length)
+        : targetArg;
     while (cleaned.endsWith('/') || cleaned.endsWith('#')) {
       cleaned = cleaned.substring(0, cleaned.length - 1);
     }
 
     // Detect platform based on format
+    final scheme = Uri.tryParse(cleaned)?.scheme ?? '';
     if (cleaned.startsWith('git@$_azureSshHost:')) {
       return parseAzure(cleaned);
     } else if (cleaned.startsWith('git@')) {
       return parseGitHubSsh(cleaned);
-    } else if (Uri.tryParse(cleaned)?.scheme.startsWith('http') ?? false) {
+    } else if (scheme.startsWith('http') || _urlSchemes.contains(scheme)) {
       return parseHttp(cleaned);
     } else if (cleaned.contains(_azureSshHost)) {
       // `https://ssh.dev.azure.com:v3/<org>/<project>/<repo>` — the form gg
@@ -55,6 +58,9 @@ class UrlParser {
       return parsePlainRepo(cleaned);
     }
   }
+
+  /// Schemes git reads like `https://`: `ssh://git@host/org/repo`.
+  static const Set<String> _urlSchemes = {'ssh', 'git'};
 
   /// The host of the Azure DevOps git endpoint.
   static const String _azureSshHost = 'ssh.dev.azure.com';
