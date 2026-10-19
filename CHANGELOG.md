@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Do not copy the create_repo state into tickets
+
 ## 4.10.1 - 2026-10-16
 
 ## 4.10.0 - 2026-10-14

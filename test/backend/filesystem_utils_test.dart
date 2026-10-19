@@ -95,6 +95,20 @@ void main() {
       expect(copiedGgJson.existsSync(), isTrue);
     });
 
+    test('skips the progress of gg do create repo', () async {
+      final ggDir = Directory(path.join(sourceDir.path, '.gg'));
+      await ggDir.create(recursive: true);
+      await File(path.join(ggDir.path, 'create_repo_state.json'))
+          .writeAsString('{"done":["scaffold"]}');
+
+      await copyDirectory(sourceDir, destinationDir);
+
+      final copied = File(
+        path.join(destinationDir.path, '.gg', 'create_repo_state.json'),
+      );
+      expect(copied.existsSync(), isFalse);
+    });
+
     test('copies symlinks as symlinks', () async {
       // A file, a link to it, and a link to a sub directory.
       final target = File(path.join(sourceDir.path, 'target.txt'));

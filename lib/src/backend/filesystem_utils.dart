@@ -25,7 +25,10 @@ import 'package:path/path.dart' as path;
 ///   legacy `.gg/gg-publish.json`): they are gitignored and belong to the
 ///   publish of one working copy only — carried into a ticket copy they
 ///   would block or corrupt the next publish there (skipped steps, wrong
-///   feature branch, answers that describe another ticket's work).
+///   feature branch, answers that describe another ticket's work). The
+///   progress of `gg do create repo` (`.gg/create_repo_state.json`) stays
+///   in the ocean for the same reason: it describes the run that created
+///   the repository, not the ticket copy.
 ///
 /// Throws an [ArgumentError] if the source directory does not exist.
 Future<void> copyDirectory(
@@ -35,6 +38,7 @@ Future<void> copyDirectory(
     'node_modules',
     'publish_config.json',
     'publish_state.json',
+    'create_repo_state.json',
     'gg-publish.json',
     '.gg-publish.json',
     '.ticket.json',
