@@ -6,6 +6,7 @@
 
 - Do not copy the create_repo state into tickets
 - Check stdin and stdout before planning the questions
+- Read ssh and git+ URLs and org names with capitals
 
 ## 4.10.1 - 2026-10-16
 

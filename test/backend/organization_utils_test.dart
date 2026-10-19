@@ -71,6 +71,14 @@ void main() {
           expect(org?.url, equals('https://github.com/foobar/'));
         });
 
+        test('in the spelling of the URL', () {
+          final org = OrganizationUtils.extractOrganizationFromUrl(
+            'https://github.com/NewOrg/repo.git',
+          );
+          expect(org?.name, 'NewOrg');
+          expect(org?.url, 'https://github.com/NewOrg/');
+        });
+
         test('from HTTP-URL for org', () {
           final org = OrganizationUtils.extractOrganizationFromUrl(
             'https://github.com/foobar',
