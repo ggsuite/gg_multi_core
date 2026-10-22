@@ -11,6 +11,8 @@ import 'package:mocktail/mocktail.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
+import '../symlinks.dart';
+
 class MockDirectory extends Mock implements Directory {}
 
 void main() {
@@ -181,8 +183,11 @@ void main() {
         final dir = repo('ggsuite', 'gg_multi');
         Directory(path.join(dir.path, 'lib')).createSync();
         File(path.join(dir.path, 'lib', 'a.dart')).writeAsStringSync('a');
-        Link(path.join(dir.path, 'link.dart'))
-            .createSync(path.join('lib', 'a.dart'));
+        // A link comes along where the machine can create one.
+        if (canCreateSymlinks) {
+          Link(path.join(dir.path, 'link.dart'))
+              .createSync(path.join('lib', 'a.dart'));
+        }
 
         final source = MockDirectory();
         when(() => source.path).thenReturn(dir.path);
@@ -203,10 +208,12 @@ void main() {
           File(path.join(target, 'lib', 'a.dart')).readAsStringSync(),
           'a',
         );
-        expect(
-          Link(path.join(target, 'link.dart')).targetSync(),
-          path.join('lib', 'a.dart'),
-        );
+        if (canCreateSymlinks) {
+          expect(
+            Link(path.join(target, 'link.dart')).targetSync(),
+            path.join('lib', 'a.dart'),
+          );
+        }
       });
     });
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Run the tests on Windows without Developer Mode
+
 ## 4.11.0 - 2026-10-19
 
 ### Changed
