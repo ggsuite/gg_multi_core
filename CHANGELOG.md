@@ -5,6 +5,7 @@
 ### Changed
 
 - Run the tests on Windows without Developer Mode
+- Document the Windows support of ticket gg-1
 
 ## 4.11.0 - 2026-10-19
 
