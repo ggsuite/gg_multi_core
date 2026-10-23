@@ -47,6 +47,22 @@ void main() {
       expect(result.repo, 'myrepo');
     });
 
+    test('keeps a .git inside the repository name', () {
+      for (final url in [
+        'git@github.com:myorg/myorg.github.io.git',
+        'git@github.com:myorg/myorg.github.io',
+        'https://github.com/myorg/myorg.github.io.git',
+        'ssh://git@github.com/myorg/myorg.github.io.git',
+        'git+https://github.com/myorg/myorg.github.io.git',
+        'myorg/myorg.github.io.git',
+        'myorg/myorg.github.io',
+      ]) {
+        final result = parser.parse(url);
+        expect(result.org, 'myorg', reason: url);
+        expect(result.repo, 'myorg.github.io', reason: url);
+      }
+    });
+
     test('parses ssh://, git:// and the git+ URLs of npm', () {
       for (final url in [
         'ssh://git@github.com/myorg/myrepo.git',
@@ -367,6 +383,12 @@ void main() {
         final result = parser.parseUsernameRepo(target);
         expect(result.platformType, 'github');
         expect(result.org, 'myorg');
+        expect(result.repo, 'myrepo');
+      });
+
+      test('drops a trailing .git', () {
+        const target = 'myorg/myrepo.git';
+        final result = parser.parseUsernameRepo(target);
         expect(result.repo, 'myrepo');
       });
 

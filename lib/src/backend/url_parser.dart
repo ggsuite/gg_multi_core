@@ -170,13 +170,16 @@ class UrlParser {
       : segment;
 
   /// Internal helper to parse GitHub SSH URLs. Not intended for external use.
+  ///
+  /// The expression drops the trailing `.git` itself, so a `.git` inside the
+  /// name — `<org>.github.io` — stays part of the repository.
   ParseResult parseGitHubSsh(String url) {
     final sshRegex = RegExp(r'^git@[^:]+:([^/]+)/(.+?)(?:\.git)?$');
     final match = sshRegex.firstMatch(url);
     if (match != null) {
       return ParseResult(
         org: match.group(1),
-        repo: match.group(2)!.replaceAll('.git', ''),
+        repo: match.group(2),
         platformType: 'github',
       );
     }
@@ -233,7 +236,7 @@ class UrlParser {
     if (parts.length == 2) {
       return ParseResult(
         org: parts[0],
-        repo: parts[1],
+        repo: _withoutGitSuffix(parts[1]),
         platformType: 'github', // Assume GitHub as default
       );
     }

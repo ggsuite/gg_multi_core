@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.11.1 - 2026-10-23
+
+### Changed
+
+- Keep a .git inside repository names of SSH and org/repo targets
+
 ## 4.11.0 - 2026-10-19
 
 ### Changed
