@@ -10,6 +10,8 @@ import 'package:gg_multi_core/src/backend/filesystem_utils.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
+import '../symlinks.dart';
+
 void main() {
   group('copyDirectory', () {
     late Directory sourceDir;
@@ -137,7 +139,7 @@ void main() {
             .readAsStringSync(),
         'content',
       );
-    });
+    }, skip: skipWithoutSymlinks);
 
     test('copies a broken symlink instead of dropping it', () async {
       await Link(path.join(sourceDir.path, 'broken'))
@@ -148,7 +150,7 @@ void main() {
       final link = Link(path.join(destinationDir.path, 'broken'));
       expect(link.existsSync(), isTrue);
       expect(await link.target(), 'does_not_exist.txt');
-    });
+    }, skip: skipWithoutSymlinks);
 
     test('throws ArgumentError when source does not exist', () async {
       final nonExisting = Directory(

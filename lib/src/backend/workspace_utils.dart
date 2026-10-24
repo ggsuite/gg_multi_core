@@ -384,9 +384,12 @@ class WorkspaceUtils {
       }
       throw noTicket(dir.path);
     }
+    // Windows tests reach it in Developer Mode only.
+    // coverage:ignore-start
     if (type == FileSystemEntityType.link) {
       throw noTicket(dir.path);
     }
+    // coverage:ignore-end
 
     try {
       dir.createSync();

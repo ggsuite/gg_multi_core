@@ -13,6 +13,8 @@ import 'package:gg_multi_core/src/backend/workspace_utils.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
+import '../symlinks.dart';
+
 void main() {
   group('WorkspaceUtils.defaultOceanWorkspacePath', () {
     late Directory tempRoot;
@@ -1031,7 +1033,10 @@ void main() {
           ..writeAsStringSync('license text');
         final target = Directory(path.join(tempRoot.path, 'target'))
           ..createSync();
-        Link(path.join(tempRoot.path, 'lnk')).createSync(target.path);
+        // A link is one more place taken, where the machine can create one.
+        if (canCreateSymlinks) {
+          Link(path.join(tempRoot.path, 'lnk')).createSync(target.path);
+        }
         final legacyRoot = Directory(
           path.join(tempRoot.path, ggMultiLegacyTicketFolder),
         )..createSync();
@@ -1040,7 +1045,7 @@ void main() {
         final expected = <String, String>{
           'doc': 'doc',
           'LICENSE': 'LICENSE',
-          'lnk': 'lnk',
+          if (canCreateSymlinks) 'lnk': 'lnk',
           'F1': path.join(ggMultiLegacyTicketFolder, 'F1'),
         };
         for (final MapEntry(key: name, value: shown) in expected.entries) {

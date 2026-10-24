@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Run the tests on Windows without Developer Mode
+- Document the Windows support of ticket gg-1
+- Upgrade the dependencies
+
 ## 4.11.1 - 2026-10-23
 
 ### Changed
