@@ -417,10 +417,13 @@ class Trash {
   /// Recursively copies [source] to [target]. Symlinks are recreated as
   /// links, so a `node_modules` tree is never dereferenced into a copy.
   static Future<void> _copy(FileSystemEntity source, String target) async {
+    // Windows tests reach it in Developer Mode only.
+    // coverage:ignore-start
     if (source is Link) {
       await Link(target).create(await source.target());
       return;
     }
+    // coverage:ignore-end
 
     if (source is File) {
       await source.copy(target);

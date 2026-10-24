@@ -73,7 +73,10 @@ Future<void> copyDirectory(
       // or absolute path the source link holds. Dereferencing it would
       // duplicate the target (and loop on a link pointing at an ancestor),
       // and skipping it would silently lose a file of the repository.
+      // Windows tests reach it in Developer Mode only.
+      // coverage:ignore-start
       await Link(newPath).create(await entity.target(), recursive: true);
+      // coverage:ignore-end
     } else if (entity is File) {
       await entity.copy(newPath);
     } else if (entity is Directory) {
