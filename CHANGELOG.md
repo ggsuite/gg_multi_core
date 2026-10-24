@@ -8,6 +8,12 @@
 - Document the Windows support of ticket gg-1
 - Upgrade the dependencies
 
+### Removed
+
+- Rewrite the blog post of ticket gg-1 in doc/blog
+
+Remove the older post from the misplaced blog folder
+
 ## 4.11.1 - 2026-10-23
 
 ### Changed
