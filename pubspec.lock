@@ -413,10 +413,10 @@ packages:
     dependency: "direct main"
     description:
       name: gg_one_core
-      sha256: "1b043d846d72119b8da49573ecdcb852d4b46fa6b5305ef895426c189baf0ad3"
+      sha256: "416db55ca0fd37458cd9b68bfc38ca0eba33865f9b3aacc994f4f2f4cf84a5b4"
       url: "https://pub.dev"
     source: hosted
-    version: "2.15.0"
+    version: "2.15.1"
   gg_one_do_publish:
     dependency: transitive
     description:
