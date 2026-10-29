@@ -160,5 +160,52 @@ void main() {
         expect(await lists.owns(ggsuite, 'gg_one'), isNull);
       });
     });
+
+    group('failureOf', () {
+      test('is the error of the platform', () async {
+        when(() => gitHub.fetchOrgRepos('ggsuite')).thenThrow(
+          Exception('\x1B[31mgh: not logged in\x1B[0m\nrun gh auth login'),
+        );
+
+        await lists.reposOf(ggsuite);
+
+        expect(lists.failureOf(ggsuite), 'gh: not logged in run gh auth login');
+      });
+
+      test('names an organization of another platform', () async {
+        final gitLab = Organization(
+          id: '4',
+          name: 'lab',
+          url: 'https://gitlab.com/lab/',
+        );
+
+        await lists.reposOf(gitLab);
+
+        expect(
+          lists.failureOf(gitLab),
+          'only GitHub and Azure DevOps organizations can be listed, '
+          'not https://gitlab.com/lab/',
+        );
+      });
+
+      test('is null for a listed organization', () async {
+        when(() => gitHub.fetchOrgRepos('ggsuite'))
+            .thenAnswer((_) async => [repo('gg')]);
+
+        await lists.reposOf(ggsuite);
+
+        expect(lists.failureOf(ggsuite), isNull);
+      });
+    });
+  });
+
+  group('plainError', () {
+    test('drops the prefix, the colors and the line breaks', () {
+      expect(
+        plainError(Exception('\x1B[31mfailed\x1B[0m\r\n\n  because\n')),
+        'failed because',
+      );
+      expect(plainError('plain'), 'plain');
+    });
   });
 }

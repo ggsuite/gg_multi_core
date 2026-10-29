@@ -14,6 +14,8 @@ import 'package:gg_localize_refs/gg_localize_refs.dart';
 import 'package:gg_log/gg_log.dart';
 import 'package:gg_multi_core/src/backend/graph_package_dirs.dart';
 import 'package:gg_multi_core/src/backend/missing_ocean_repos.dart';
+import 'package:gg_multi_core/src/backend/missing_repo_messages.dart';
+import 'package:gg_multi_core/src/backend/organization_repo_lists.dart';
 import 'package:gg_multi_core/src/backend/repo_dependencies.dart';
 import 'package:gg_multi_core/src/backend/repo_folder_resolver.dart';
 import 'package:gg_multi_core/src/backend/repo_freshness.dart';
@@ -29,6 +31,9 @@ class TicketRefsStatus {
     this.unlocalized = const <String, List<UnlocalizedRef>>{},
     this.missingRepos = const <String>[],
     this.missingFromOcean = const <MissingOceanRepo>[],
+    this.oceanReport = const MissingOceanReposReport(),
+    this.graphError,
+    this.staleOceanError,
   });
 
   /// The out-of-sync references per repo, keyed by its `Directory.path`.
@@ -41,6 +46,19 @@ class TicketRefsStatus {
   /// they are missing, [missingRepos] cannot see a repo between ticket repos
   /// that leads through them.
   final List<MissingOceanRepo> missingFromOcean;
+
+  /// The complete search for organization repos: besides [missingFromOcean]
+  /// the dependencies gg cannot see and the organizations it could not list.
+  /// They make the check incomplete, but never out of sync.
+  final MissingOceanReposReport oceanReport;
+
+  /// Why the ocean graph does not build, which leaves [missingRepos] empty;
+  /// null when it builds.
+  final String? graphError;
+
+  /// Why the ocean copies of [missingRepos] could not be refreshed before
+  /// they were reported; null when they were, or did not need to be.
+  final String? staleOceanError;
 
   /// Whether every reference of the ticket points at its checkout.
   bool get isInSync =>
@@ -335,25 +353,35 @@ class TicketLocalizer {
     final missing = await _findMissing(ticketDir);
     return TicketRefsStatus(
       unlocalized: unlocalized,
-      missingRepos: missing.between ?? const <String>[],
+      missingRepos: missing.between,
       missingFromOcean: missing.fromOcean.missing,
+      oceanReport: missing.fromOcean,
+      graphError: missing.graphError,
     );
   }
 
   // ...........................................................................
   /// The repos the ticket lacks: the organization repos missing from the
   /// ocean — the graph cannot see through them — and the ocean repos between
-  /// the ticket repos. `between` is null when the ocean graph does not build.
+  /// the ticket repos. `graphError` says why the ocean graph does not build;
+  /// `between` is empty then.
   ///
   /// Advisory by default: a failing search reports nothing. With [strict] its
   /// error is thrown — the publish gate must not pass because it broke.
-  Future<({List<String>? between, MissingOceanReposReport fromOcean})>
+  Future<
+    ({
+      List<String> between,
+      String? graphError,
+      MissingOceanReposReport fromOcean,
+    })
+  >
   _findMissing(Directory ticketDir, {bool strict = false}) async {
     final ticketPath = path.absolute(ticketDir.path);
     final oceanPath = _oceanPathOf(ticketDir);
     if (!Directory(oceanPath).existsSync()) {
       return (
         between: const <String>[],
+        graphError: null,
         fromOcean: const MissingOceanReposReport(),
       );
     }
@@ -371,11 +399,13 @@ class TicketLocalizer {
       fromOcean = const MissingOceanReposReport();
     }
 
+    final between = await _missingRepos(
+      ticketPath: ticketPath,
+      oceanPath: oceanPath,
+    );
     return (
-      between: await _missingRepos(
-        ticketPath: ticketPath,
-        oceanPath: oceanPath,
-      ),
+      between: between.names,
+      graphError: between.error,
       fromOcean: fromOcean,
     );
   }
@@ -383,10 +413,11 @@ class TicketLocalizer {
   // ...........................................................................
   /// Throws when the ocean lacks an organization repo the ticket depends on
   /// or the ticket lacks a repo between its repos — the publish order and the
-  /// version constraints cannot be planned then. The message names the
-  /// command for each; [ggLog] gets the details and the warnings about
-  /// organizations that could not be listed and an ocean graph that does not
-  /// build.
+  /// version constraints cannot be planned then. [ggLog] gets a report per
+  /// problem with its probable cause and the command that fixes it — also
+  /// for what makes the check incomplete without blocking: organizations that
+  /// could not be listed, dependencies gg cannot see, an ocean graph that
+  /// does not build.
   ///
   /// The ocean is not refreshed by the commands before: a repo reported
   /// between the ticket repos is brought to its remote state first and the
@@ -396,51 +427,39 @@ class TicketLocalizer {
     required GgLog ggLog,
   }) async {
     var missing = await _findMissing(ticketDir, strict: true);
-    final between = missing.between ?? const <String>[];
-    if (between.isNotEmpty) {
-      await _refreshOceanRepos(ticketDir, between);
+    String? staleOceanError;
+    if (missing.between.isNotEmpty) {
+      staleOceanError = await _refreshOceanRepos(ticketDir, missing.between);
       missing = await _findMissing(ticketDir, strict: true);
     }
 
-    for (final org in missing.fromOcean.unchecked) {
-      ggLog(
-        cWarn(
-          '⚠️ Could not list the repositories of ${org.name}: a repository of '
-          'it the ocean lacks would go unnoticed.',
-        ),
-      );
-    }
-    if (missing.between == null) {
-      ggLog(
-        cWarn(
-          '⚠️ The dependency graph of the ocean does not build: repos '
-          'between the ticket repos would go unnoticed.',
-        ),
-      );
-    }
-
     final status = TicketRefsStatus(
-      missingRepos: missing.between ?? const <String>[],
+      missingRepos: missing.between,
       missingFromOcean: missing.fromOcean.missing,
+      oceanReport: missing.fromOcean,
+      graphError: missing.graphError,
+      staleOceanError: missing.between.isEmpty ? null : staleOceanError,
     );
+    _warnMissingRepos(status, ticketDir, ggLog);
     if (status.isInSync) {
       return;
     }
-    _warnMissingRepos(status, ticketDir, ggLog);
 
     final reasons = <String>[
       if (status.missingFromOcean.isNotEmpty)
         'The ocean lacks ${_oceanNames(status).join(', ')}.',
       if (status.missingRepos.isNotEmpty)
         'The ticket lacks ${status.missingRepos.join(', ')}.',
+      'The reports above name the cause and the command.',
     ];
     throw Exception(cError(reasons.join(' ')));
   }
 
   // ...........................................................................
-  /// Brings the ocean copies of [names] to the state of their remote. A repo
-  /// holding local work, or a failing fetch, leaves the copy as it is.
-  Future<void> _refreshOceanRepos(
+  /// Brings the ocean copies of [names] to the state of their remote and
+  /// returns why that failed: a repo holding local work, or a failing fetch,
+  /// leaves the copy as it is.
+  Future<String?> _refreshOceanRepos(
     Directory ticketDir,
     List<String> names,
   ) async {
@@ -455,8 +474,10 @@ class TicketLocalizer {
         directories: dirs,
         workspacePath: oceanPath,
       );
-    } catch (_) {
+      return null;
+    } catch (e) {
       // The repos keep their state; the search reports what it sees.
+      return plainError(e);
     }
   }
 
@@ -499,8 +520,8 @@ class TicketLocalizer {
 
   // ...........................................................................
   /// The ocean repos between the repos of [ticketPath] in the ticket-shadowed
-  /// graph; null when the ocean graph is broken.
-  Future<List<String>?> _missingRepos({
+  /// graph; none and the `error` when the ocean graph is broken.
+  Future<({List<String> names, String? error})> _missingRepos({
     required String ticketPath,
     required String oceanPath,
   }) async {
@@ -514,9 +535,9 @@ class TicketLocalizer {
           ticketPath: ticketPath,
         ).dirs,
       );
-    } catch (_) {
+    } catch (e) {
       // A cycle among unrelated ocean repos must not block the ticket.
-      return null;
+      return (names: const <String>[], error: plainError(e));
     }
 
     bool inTicket(Node node) => path.isWithin(ticketPath, node.directory.path);
@@ -536,10 +557,13 @@ class TicketLocalizer {
     final ticketNodes = nodes.where(inTicket).toList();
     final below = _reachable(ticketNodes, _regularDependencies);
     final above = _reachable(ticketNodes, (n) => dependents[n] ?? const []);
-    return [
-      for (final node in below.intersection(above))
-        if (!inTicket(node)) path.basename(node.directory.path),
-    ]..sort();
+    return (
+      names: [
+        for (final node in below.intersection(above))
+          if (!inTicket(node)) path.basename(node.directory.path),
+      ]..sort(),
+      error: null,
+    );
   }
 
   // ...........................................................................
@@ -568,7 +592,8 @@ class TicketLocalizer {
   }
 
   // ...........................................................................
-  /// Warns about the missing repos of [status] with the commands adding them.
+  /// Reports the missing repos of [status] and what makes the check
+  /// incomplete, each with its probable cause and the command fixing it.
   /// Advisory: the ocean is not refreshed and can be stale.
   ///
   /// A repo the ocean lacks is cloned into it from the workspace root — not
@@ -579,36 +604,24 @@ class TicketLocalizer {
     Directory ticketDir,
     GgLog ggLog,
   ) {
-    if (status.missingFromOcean.isNotEmpty) {
-      ggLog(cWarn('\n⚠️ Repos the ticket depends on, but not in the ocean:'));
-      for (final repo in status.missingFromOcean) {
-        ggLog(
-          cWarn(
-            '  - ${repo.repoName} '
-            '(${repo.dependency} in ${repo.manifestPath})',
-          ),
-        );
-      }
-      final root = path.dirname(_oceanPathOf(ticketDir));
-      ggLog(
-        cAction('Run ') +
-            cCmd('gg do add ${_oceanNames(status).join(' ')}') +
-            cAction(' in ') +
-            cCmd(root) +
-            cAction(' to clone them into the ocean.\n'),
-      );
-    }
-    if (status.missingRepos.isNotEmpty) {
-      ggLog(cWarn('\n⚠️ Repos between the ticket repos, but not in it:'));
-      for (final name in status.missingRepos) {
-        ggLog(cWarn('  - $name'));
-      }
-      ggLog(
-        cAction('Run ') +
-            cCmd('gg do add ${status.missingRepos.join(' ')}') +
-            cAction(' to add them.\n'),
-      );
-    }
+    final report = status.oceanReport;
+    final lines = <String>[
+      for (final org in report.unchecked)
+        ...uncheckedOrganizationReport(org, report.failureOf(org)),
+      if (status.graphError != null) ...brokenGraphReport(status.graphError!),
+      for (final dependency in report.inaccessible)
+        ...inaccessibleDependencyReport(dependency),
+      if (status.missingFromOcean.isNotEmpty)
+        ...missingFromOceanReport(
+          status.missingFromOcean,
+          path.dirname(_oceanPathOf(ticketDir)),
+        ),
+      if (status.missingRepos.isNotEmpty)
+        ...missingBetweenReport(status.missingRepos),
+      if (status.staleOceanError != null)
+        ...staleOceanReport(status.staleOceanError!),
+    ];
+    lines.forEach(ggLog);
   }
 
   // ...........................................................................

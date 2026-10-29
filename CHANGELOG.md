@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.14.0 - 2026-10-29
+
+### Changed
+
+- Report the dependencies gg cannot see, and name the probable cause and the next step in every missing-repo message
+
 ## 4.13.0 - 2026-10-29
 
 ### Changed

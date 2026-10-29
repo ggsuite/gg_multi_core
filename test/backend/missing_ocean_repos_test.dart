@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:gg_multi_core/gg_multi_core.dart';
+import 'package:http/http.dart' as http;
 import 'package:mocktail/mocktail.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
@@ -20,6 +21,12 @@ void main() {
   late String ticketPath;
   late MockGitHubPlatform gitHub;
   late MissingOceanRepos missingOceanRepos;
+
+  /// What the pub.dev stub answers per package; unnamed ones exist.
+  late Map<String, bool?> onPubDev;
+
+  /// The packages pub.dev was asked about, in order.
+  late List<String> askedPubDev;
 
   /// Writes a Dart repo [name] into [parent] depending on [deps] (hosted,
   /// unless the value is a map) and on the dev dependencies [devDeps].
@@ -99,8 +106,14 @@ void main() {
     Directory(ticketPath).createSync(recursive: true);
     OrganizationUtils.clearCache();
     gitHub = MockGitHubPlatform();
+    onPubDev = <String, bool?>{};
+    askedPubDev = <String>[];
     missingOceanRepos = MissingOceanRepos(
       repoLists: OrganizationRepoLists(gitHubPlatform: gitHub),
+      pubDevPackageExists: (package) async {
+        askedPubDev.add(package);
+        return onPubDev.containsKey(package) ? onPubDev[package] : true;
+      },
     );
   });
 
@@ -116,6 +129,36 @@ void main() {
     ticketPath: ticketPath,
     roots: roots,
   );
+
+  group('pubDevPackageExists', () {
+    Future<bool?> answer(Future<http.Response> Function(Uri) get) =>
+        pubDevPackageExists('pkg', get: get);
+
+    test('asks the pub.dev API about the package', () async {
+      Uri? asked;
+      await answer((url) async {
+        asked = url;
+        return http.Response('{}', 200);
+      });
+      expect(asked, Uri.parse('https://pub.dev/api/packages/pkg'));
+    });
+
+    test('is true for 200, false for 404, null otherwise', () async {
+      expect(await answer((_) async => http.Response('', 200)), isTrue);
+      expect(await answer((_) async => http.Response('', 404)), isFalse);
+      expect(await answer((_) async => http.Response('', 500)), isNull);
+      expect(await answer((_) async => throw Exception('offline')), isNull);
+    });
+  });
+
+  test('MissingOceanReposReport.failureOf names the recorded reason', () {
+    final org = Organization(name: 'org', url: 'https://github.com/org/');
+    expect(
+      const MissingOceanReposReport(failures: {'org': 'boom'}).failureOf(org),
+      'boom',
+    );
+    expect(const MissingOceanReposReport().failureOf(org), 'no reason given');
+  });
 
   group('MissingOceanRepos', () {
     group('find', () {
@@ -269,6 +312,235 @@ void main() {
 
         expect(report.missing.map((m) => m.repoName), ['x']);
         expect(report.unchecked.map((o) => o.name), ['two']);
+        expect(report.failures, {'two': 'gh not authenticated'});
+      });
+
+      test(
+        'names why an organization of another platform was not listed',
+        () async {
+          File(path.join(oceanPath, '.organizations')).writeAsStringSync(
+            jsonEncode([
+              Organization(name: 'lab', url: 'https://gitlab.com/lab/').toMap(),
+            ]),
+          );
+          dartRepo(ticketPath, 'a', deps: {'x': '^1.0.0'});
+
+          final report = await find();
+
+          expect(report.unchecked.map((o) => o.name), ['lab']);
+          expect(
+            report.failures['lab'],
+            'only GitHub and Azure DevOps organizations can be listed, '
+            'not https://gitlab.com/lab/',
+          );
+        },
+      );
+
+      group('reports what gg cannot see', () {
+        test('a hosted package pub.dev does not know', () async {
+          organizations(['one', 'two']);
+          offers('one', const []);
+          when(() => gitHub.fetchOrgRepos('two'))
+              .thenThrow(Exception('offline'));
+          onPubDev['secret'] = false;
+          dartRepo(
+            ticketPath,
+            'a',
+            deps: {'secret': '^1.0.0', 'path': '^1.0.0'},
+          );
+
+          final report = await find();
+
+          final dependency = report.inaccessible.single;
+          expect(dependency.dependency, 'secret');
+          expect(dependency.repoName, 'secret');
+          expect(dependency.reason, InaccessibleReason.notOnPubDev);
+          expect(
+            dependency.manifestPath,
+            path.join(ticketPath, 'a', 'pubspec.yaml'),
+          );
+          // Only the organization that was listed can be the one hiding it.
+          expect(dependency.organizations.map((o) => o.name), ['one']);
+          expect(askedPubDev, unorderedEquals(['secret', 'path']));
+        });
+
+        test('with every organization when none could be listed', () async {
+          organizations(['one']);
+          when(() => gitHub.fetchOrgRepos('one'))
+              .thenThrow(Exception('offline'));
+          onPubDev['secret'] = false;
+          dartRepo(ticketPath, 'a', deps: {'secret': '^1.0.0'});
+
+          final report = await find();
+
+          expect(report.inaccessible.single.organizations.map((o) => o.name), [
+            'one',
+          ]);
+        });
+
+        test('asking pub.dev only about what no lock file knows', () async {
+          organizations(['org']);
+          offers('org', const []);
+          final a = dartRepo(
+            ticketPath,
+            'a',
+            deps: {'path': '^1.0.0', 'args': '^2.0.0', 'local': '^1.0.0'},
+          );
+          File(path.join(a.path, 'pubspec.lock')).writeAsStringSync('''
+packages:
+  path:
+    dependency: "direct main"
+    description:
+      name: path
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.9.1"
+  args:
+    dependency: "direct main"
+    description:
+      name: args
+      url: "https://pub.dartlang.org"
+    source: hosted
+    version: "2.7.0"
+  local:
+    dependency: "direct main"
+    description:
+      path: "../local"
+      relative: true
+    source: path
+    version: "1.0.0"
+''');
+
+          await find();
+
+          expect(askedPubDev, ['local']);
+        });
+
+        test('asking pub.dev once per package', () async {
+          organizations(['org']);
+          offers('org', const []);
+          dartRepo(ticketPath, 'a', deps: {'path': '^1.0.0'});
+
+          await find();
+          await find();
+
+          expect(askedPubDev, ['path']);
+        });
+
+        test('nothing when pub.dev does not answer', () async {
+          organizations(['org']);
+          offers('org', const []);
+          onPubDev['secret'] = null;
+          dartRepo(ticketPath, 'a', deps: {'secret': '^1.0.0'});
+
+          final report = await find();
+
+          expect(report.inaccessible, isEmpty);
+        });
+
+        test('nothing for a package of another package server', () async {
+          organizations(['org']);
+          offers('org', const []);
+          dartRepo(
+            ticketPath,
+            'a',
+            deps: {
+              'private_pkg': {
+                'hosted': 'https://pub.example.com',
+                'version': '^1.0.0',
+              },
+            },
+          );
+
+          final report = await find();
+
+          expect(report.inaccessible, isEmpty);
+          expect(askedPubDev, isEmpty);
+        });
+
+        test('a git dependency into an organization that hides it', () async {
+          organizations(['org']);
+          offers('org', const []);
+          dartRepo(
+            ticketPath,
+            'a',
+            deps: {
+              'secret': {'git': 'https://github.com/org/secret_repo.git'},
+            },
+          );
+
+          final report = await find();
+
+          final dependency = report.inaccessible.single;
+          expect(dependency.reason, InaccessibleReason.gitUrlOfOrganization);
+          expect(dependency.repoName, 'secret_repo');
+          expect(dependency.organizations.map((o) => o.name), ['org']);
+        });
+
+        test(
+          'nothing for a git dependency of an unlisted organization',
+          () async {
+            organizations(['org']);
+            when(() => gitHub.fetchOrgRepos('org')).thenThrow(Exception('x'));
+            dartRepo(
+              ticketPath,
+              'a',
+              deps: {
+                'secret': {'git': 'https://github.com/org/secret.git'},
+                'foreign': {'git': 'https://github.com/other/foreign.git'},
+              },
+            );
+
+            final report = await find();
+
+            expect(report.inaccessible, isEmpty);
+          },
+        );
+
+        test('an npm package of an organization scope it hides', () async {
+          organizations(['tssuite']);
+          offers('tssuite', const []);
+          tsRepo(
+            ticketPath,
+            'a',
+            deps: {'@tssuite/secret': '^1.0.0', '@types/node': '^20.0.0'},
+          );
+
+          final report = await find();
+
+          final dependency = report.inaccessible.single;
+          expect(dependency.dependency, '@tssuite/secret');
+          expect(dependency.repoName, 'secret');
+          expect(dependency.reason, InaccessibleReason.organizationScope);
+        });
+
+        test('nothing for an npm scope whose list is unknown', () async {
+          organizations(['tssuite']);
+          when(() => gitHub.fetchOrgRepos('tssuite'))
+              .thenThrow(Exception('offline'));
+          tsRepo(ticketPath, 'a', deps: {'@tssuite/secret': '^1.0.0'});
+
+          final report = await find();
+
+          expect(report.inaccessible, isEmpty);
+        });
+      });
+
+      test('finds a git dependency by the repository its url names', () async {
+        organizations(['org']);
+        offers('org', ['other_name']);
+        dartRepo(
+          ticketPath,
+          'a',
+          deps: {
+            'pkg': {'git': 'https://github.com/org/other_name.git'},
+          },
+        );
+
+        final report = await find();
+
+        expect(report.missing.single.repoName, 'other_name');
+        expect(report.missing.single.dependency, 'pkg');
       });
 
       test('asks no platform without organizations', () async {

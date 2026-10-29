@@ -53,7 +53,10 @@ the foundation the other members of the family (`gg_multi_workspace`,
   organizations' repository lists decide, not the package registries,
   so a package that is not published yet is found as well. Without
   them in the ocean, the dependency graph cannot see a repo between the
-  ticket repos that leads through them.
+  ticket repos that leads through them. Dependencies it cannot see — most
+  likely private repositories the account has no access to — are reported
+  too. Every report (`missing_repo_messages.dart`) names the probable
+  cause and the command to run or try next.
 - **Git helpers** (`git_snapshot.dart`): `runGit` and
   `captureUncommitted`, shared by the push and publish flows.
 - **Process running** (`process_runner.dart`): the family's single

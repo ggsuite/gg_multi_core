@@ -188,11 +188,9 @@ void main() {
     return a;
   }
 
-  /// The warning about [names] missing in the ticket.
+  /// The warning about [names] missing in the ticket, as logged.
   List<String> missingWarning(List<String> names) => [
-    '\n⚠️ Repos between the ticket repos, but not in it:',
-    for (final name in names) '  - $name',
-    'Run gg do add ${names.join(' ')} to add them.\n',
+    for (final line in missingBetweenReport(names)) rmControls(line),
   ];
 
   setUp(() {
@@ -405,8 +403,9 @@ void main() {
               ),
             ),
           );
-          expect(messages.take(3), missingWarning(['c']));
-          expect(messages.skip(3).first, '\na');
+          final warning = missingWarning(['c']);
+          expect(messages.take(warning.length), warning);
+          expect(messages.skip(warning.length).first, '\na');
         },
       );
 
@@ -458,6 +457,7 @@ void main() {
           processRunner: fakeRunner,
           missingOceanRepos: MissingOceanRepos(
             repoLists: OrganizationRepoLists(gitHubPlatform: gitHub),
+            pubDevPackageExists: (_) async => true,
           ),
         );
       }
@@ -523,6 +523,7 @@ void main() {
         expect(messages, [
           '\n⚠️ Repos the ticket depends on, but not in the ocean:',
           '  - x (x in ${path.join(ocean.path, 'org', 'c', 'pubspec.yaml')})',
+          startsWith('  Probably added to the organization'),
           'Run gg do add x in ${tmp.path} to clone them into the ocean.\n',
         ]);
       });
@@ -558,7 +559,8 @@ void main() {
               isA<Exception>().having(
                 (e) => rmControls('$e'),
                 'message',
-                'Exception: The ocean lacks x. The ticket lacks c.',
+                'Exception: The ocean lacks x. The ticket lacks c. '
+                    'The reports above name the cause and the command.',
               ),
             ),
           );
@@ -599,10 +601,13 @@ void main() {
             ggLog: ggLog,
           );
 
-          expect(messages, [
-            '⚠️ The dependency graph of the ocean does not build: repos '
-                'between the ticket repos would go unnoticed.',
-          ]);
+          expect(
+            messages.first,
+            startsWith(
+              '\n⚠️ The dependency graph of the ocean does not build:',
+            ),
+          );
+          expect(messages.last, contains('gg do create graph'));
         });
 
         test('refreshes a stale ocean repo before blocking on it', () async {
@@ -628,6 +633,7 @@ void main() {
             processRunner: fakeRunner,
             missingOceanRepos: MissingOceanRepos(
               repoLists: OrganizationRepoLists(gitHubPlatform: gitHub),
+              pubDevPackageExists: (_) async => true,
             ),
             repoFreshness: freshness,
           );
@@ -658,6 +664,7 @@ void main() {
             processRunner: fakeRunner,
             missingOceanRepos: MissingOceanRepos(
               repoLists: OrganizationRepoLists(gitHubPlatform: gitHub),
+              pubDevPackageExists: (_) async => true,
             ),
             repoFreshness: freshness,
           );
@@ -668,8 +675,16 @@ void main() {
               isA<Exception>().having(
                 (e) => rmControls('$e'),
                 'message',
-                'Exception: The ticket lacks c.',
+                'Exception: The ticket lacks c. '
+                    'The reports above name the cause and the command.',
               ),
+            ),
+          );
+          expect(
+            messages,
+            contains(
+              '\n⚠️ Could not refresh the ocean copies checked above: '
+              'c has uncommitted changes',
             ),
           );
         });
@@ -685,10 +700,40 @@ void main() {
           );
 
           expect(messages, [
-            '⚠️ Could not list the repositories of org: a repository of it '
-                'the ocean lacks would go unnoticed.',
+            for (final line in uncheckedOrganizationReport(
+              Organization(name: 'org', url: 'https://github.com/org/'),
+              'gh not authenticated',
+            ))
+              rmControls(line),
           ]);
         });
+
+        test(
+          'warns about a dependency it cannot see, without blocking',
+          () async {
+            orgOffers(['a']);
+            localizer = TicketLocalizer(
+              ggLog: ggLog,
+              processRunner: fakeRunner,
+              missingOceanRepos: MissingOceanRepos(
+                repoLists: OrganizationRepoLists(gitHubPlatform: gitHub),
+                pubDevPackageExists: (package) async => package != 'secret',
+              ),
+            );
+            await repo('a', {
+              'pubspec.yaml': pubspec('a', ['secret']),
+            });
+            messages.clear();
+
+            await localizer.throwWhenReposMissing(
+              ticketDir: ticket,
+              ggLog: ggLog,
+            );
+
+            expect(messages.first, startsWith('\n⚠️ secret (in '));
+            expect(messages, contains(contains('gh repo view org/secret')));
+          },
+        );
 
         test('passes without an ocean', () async {
           await repo('a', {'pubspec.yaml': pubspec('a')});
