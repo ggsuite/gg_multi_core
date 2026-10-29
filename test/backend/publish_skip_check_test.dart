@@ -908,6 +908,31 @@ void main() {
         expect(decision.reason, contains('outside the published constraint'));
       });
 
+      test('a stale backup never overrides the manifest', () async {
+        // Old checkouts still track a backup written long before the
+        // manifest moved on. Its range would make every new version of the
+        // dependency look breaking.
+        final depDir = createPlainRepo('a', pubspecContent: 'name: a\n');
+        final dir = createPlainRepo(
+          'b',
+          pubspecContent:
+              'name: b\n'
+              'dependencies:\n'
+              '  a: ^2.2.0\n',
+        );
+        File(path.join(dir.path, '.gg_localize_refs_backup.json'))
+            .writeAsStringSync('{"a": "^1.0.4"}');
+        final repo = node('b', dir);
+        repo.dependencies['a'] = node('a', depDir);
+
+        final decision = await check.get(
+          repo: repo,
+          refVersions: {'a': '2.2.3'},
+        );
+        expect(decision.reason, isNot(contains('outside the published')));
+        expect(decision.reason, contains('git history could not be inspected'));
+      });
+
       test('an unreadable backup falls back to the manifest', () async {
         final depDir = createPlainRepo('a', pubspecContent: 'name: a\n');
         final dir = createPlainRepo(

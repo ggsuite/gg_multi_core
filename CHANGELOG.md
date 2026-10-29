@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Read the published constraint from the manifest first and fall back to the localize backup only for an old-style localized ref, so stale tracked backups no longer force a release
+
 ## 4.14.0 - 2026-10-29
 
 ### Changed
