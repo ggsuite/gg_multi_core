@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.13.0 - 2026-10-29
+
+### Changed
+
+- Make sure the organization repos a ticket depends on are in the ocean
+- Fix the CHANGELOG spacing
+
 ## 4.12.0 - 2026-10-29
 
 ### Changed

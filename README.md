@@ -43,8 +43,17 @@ the foundation the other members of the family (`gg_multi_workspace`,
   records only gg's own changes as `#gg:` commits — the user's work,
   including a hand-edited manifest, stays uncommitted. A missing repo
   never blocks (the ocean can be stale): it is a warning with the hint
-  `gg do add <repo>`. `graphPackageDirs` lists the folders of the
+  `gg do add <repo>`. Only the publish gate (`throwWhenReposMissing`)
+  stops on it. `graphPackageDirs` lists the folders of the
   ticket-shadowed dependency graph (ticket repos + unshadowed ocean).
+- **Missing organization repos** (`missing_ocean_repos.dart`,
+  `organization_repo_lists.dart`): `MissingOceanRepos` finds the repos
+  of the registered organizations the ticket depends on (regular
+  dependencies, followed through the ocean) that the ocean lacks. The
+  organizations' repository lists decide, not the package registries,
+  so a package that is not published yet is found as well. Without
+  them in the ocean, the dependency graph cannot see a repo between the
+  ticket repos that leads through them.
 - **Git helpers** (`git_snapshot.dart`): `runGit` and
   `captureUncommitted`, shared by the push and publish flows.
 - **Process running** (`process_runner.dart`): the family's single
