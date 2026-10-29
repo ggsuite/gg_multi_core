@@ -5,6 +5,11 @@
 ### Changed
 
 - Make sure the organization repos a ticket depends on are in the ocean
+## 4.12.0 - 2026-10-29
+
+### Changed
+
+- Edit commit messages, merge messages and version increments of all repos in one JSON file in VS Code
 
 ## 4.11.1 - 2026-10-23
 

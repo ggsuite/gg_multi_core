@@ -55,6 +55,24 @@ class _StubAdapter implements gg.InteractAdapter {
   }
 }
 
+/// A skip check that skips B exactly when A — known by its folder name, as it
+/// has no manifest — is predicted as [version]; every other repo publishes.
+MockPublishSkipCheck _skipBWhenAIs(String version) {
+  final check = MockPublishSkipCheck();
+  when(
+    () => check.get(
+      repo: any(named: 'repo'),
+      refVersions: any(named: 'refVersions'),
+    ),
+  ).thenAnswer((invocation) async {
+    final repo = invocation.namedArguments[#repo] as Node;
+    final refs = invocation.namedArguments[#refVersions] as Map<String, String>;
+    final skip = repo.name == 'B' && refs['A'] == version;
+    return PublishSkipDecision(skip: skip, reason: 'decided');
+  });
+  return check;
+}
+
 void main() {
   late Directory tempDir;
   late Directory ticketDir;
@@ -127,6 +145,7 @@ void main() {
     bool hasTerminal = true,
     _StubAdapter? adapter,
     EditMessage? editMessage,
+    gg.EditText? editText,
     ReadManifestVersion? readManifestVersion,
     PublishSkipCheck? check,
   }) {
@@ -161,6 +180,11 @@ void main() {
             seeds.add(initial);
             return initial;
           },
+      // No editor unless a test brings one: the questions are then asked one
+      // by one, by the stubs above.
+      editText:
+          editText ??
+          ({required prompt, required text, required fileName}) async => null,
       hasTerminal: () => hasTerminal,
     );
   }
@@ -666,6 +690,448 @@ void main() {
       );
     });
 
+    group('with an editor', () {
+      late List<String> sheets;
+
+      /// An editor answering every sheet with [answer] of what it was shown.
+      gg.EditText editor(String Function(String text) answer) =>
+          ({required prompt, required text, required fileName}) async {
+            expect(prompt, 'gg do review');
+            expect(fileName, 'TICK_publish.jsonc');
+            sheets.add(text);
+            return answer(text);
+          };
+
+      setUp(() => sheets = []);
+
+      test('asks every repository on one sheet', () async {
+        final adapter = _StubAdapter(const []);
+        final planner = makePlanner(
+          adapter: adapter,
+          editText: editor(
+            (_) =>
+                '{"A": {"versionIncrement": "minor", "mergeMessage": ["MA"]},'
+                ' "B": {"versionIncrement": "major", '
+                '"mergeMessage": ["MB", "Body"]}}',
+          ),
+        );
+
+        final plan = await planner.plan(
+          ticketDir: ticketDir,
+          subs: [node('A'), node('B')],
+          ggLog: ggLog,
+          defaultMergeMessage: 'The change',
+          wording: PublishPlanWording.review,
+        );
+
+        // Neither the select nor the line editor was used.
+        expect(adapter.capturedOptions, isEmpty);
+        expect(seeds, isEmpty);
+        expect(sheets, hasLength(1));
+        expect(sheets.single, contains('"A": {'));
+        expect(sheets.single, contains('"B": {'));
+        expect(sheets.single, contains('"mergeMessage": ["The change"]'));
+        expect(sheets.single, contains('"versionIncrement": "patch"'));
+        expect(sheets.single, contains('1.2.3 → patch 1.2.4'));
+        expect(plan.configs['A']!.versionIncrement, VersionIncrement.minor);
+        expect(plan.configs['A']!.mergeMessage, 'MA');
+        expect(plan.configs['B']!.versionIncrement, VersionIncrement.major);
+        expect(plan.entryFor('B')!.mergeMessage, 'MB\nBody');
+      });
+
+      test('shows the recorded answers next to the open ones', () async {
+        await gg.RepoPublishConfig(
+          versionIncrement: VersionIncrement.minor,
+          mergeMessage: 'recorded',
+          commits: [gg.CommitMessage(firstLine: 'kept')],
+        ).save(file: gg.repoPublishConfigFile(repoDir('A')));
+
+        final plan = await makePlanner(editText: editor((text) => text)).plan(
+          ticketDir: ticketDir,
+          subs: [node('A'), node('B')],
+          ggLog: ggLog,
+          wording: PublishPlanWording.review,
+        );
+
+        expect(sheets.single, contains('"versionIncrement": "minor"'));
+        expect(sheets.single, contains('"mergeMessage": ["recorded"]'));
+        // B had nothing recorded and no ticket description to start from.
+        expect(sheets.single, contains('"mergeMessage": ["Publish B"]'));
+        expect(plan.configs['A']!.commits.single.firstLine, 'kept');
+        expect(plan.configs['B']!.mergeMessage, 'Publish B');
+        expect(plan.configs['B']!.versionIncrement, VersionIncrement.patch);
+      });
+
+      test('opens no sheet when every answer is recorded', () async {
+        await gg.RepoPublishConfig(
+          versionIncrement: VersionIncrement.minor,
+          mergeMessage: 'recorded',
+        ).save(file: gg.repoPublishConfigFile(repoDir('A')));
+
+        await makePlanner(editText: editor((text) => text))
+            .plan(ticketDir: ticketDir, subs: [node('A')], ggLog: ggLog);
+
+        expect(sheets, isEmpty);
+      });
+
+      test('drops a repository an answer puts back in range, and keeps what '
+          'it had recorded', () async {
+        // B publishes only while A is predicted as anything but 1.2.4. A's
+        // recorded major puts B on the sheet; answering patch drops it — the
+        // pass runs again without asking anything twice, and B's answers on
+        // the sheet are not taken over: B is not released.
+        await gg.RepoPublishConfig(
+          versionIncrement: VersionIncrement.major,
+          mergeMessage: 'recorded A',
+        ).save(file: gg.repoPublishConfigFile(repoDir('A')));
+        await gg.RepoPublishConfig(
+          versionIncrement: VersionIncrement.minor,
+          mergeMessage: 'recorded B',
+          commits: [gg.CommitMessage(firstLine: 'B work')],
+        ).save(file: gg.repoPublishConfigFile(repoDir('B')));
+        final bBefore = gg
+            .repoPublishConfigFile(repoDir('B'))
+            .readAsStringSync();
+
+        final plan =
+            await makePlanner(
+              check: _skipBWhenAIs('1.2.4'),
+              editText: editor(
+                (_) =>
+                    '{"A": {"versionIncrement": "patch"},'
+                    ' "B": {"versionIncrement": "major", '
+                    '"mergeMessage": ["changed B"]}}',
+              ),
+            ).plan(
+              ticketDir: ticketDir,
+              subs: [node('A'), node('B')],
+              ggLog: ggLog,
+              reconfigure: true,
+              wording: PublishPlanWording.review,
+            );
+
+        expect(sheets, hasLength(1));
+        expect(sheets.single, contains('"B": {'));
+        expect(plan.publishes, {'A'});
+        expect(plan.configs['A']!.versionIncrement, VersionIncrement.patch);
+        expect(plan.configs['B']!.mergeMessage, 'recorded B');
+        expect(plan.configs['B']!.versionIncrement, VersionIncrement.minor);
+        expect(plan.entryFor('B')!.mergeMessage, 'recorded B');
+        expect(messages.join('\n'), contains('decided'));
+
+        await plan.save();
+        expect(
+          gg.repoPublishConfigFile(repoDir('B')).readAsStringSync(),
+          bBefore,
+        );
+      });
+
+      test('judges the dependents of an open repository by the increment '
+          'its question starts with', () async {
+        // A is unanswered. Predicting it as unknown would put B on the sheet
+        // only to drop it afterwards; its patch default keeps B in range.
+        final plan =
+            await makePlanner(
+              check: _skipBWhenAIs('1.2.4'),
+              editText: editor((text) => text),
+            ).plan(
+              ticketDir: ticketDir,
+              subs: [node('A'), node('B')],
+              ggLog: ggLog,
+              wording: PublishPlanWording.review,
+            );
+
+        expect(sheets, hasLength(1));
+        expect(sheets.single, isNot(contains('"B"')));
+        expect(plan.publishes, {'A'});
+        expect(plan.configs['B']!.mergeMessage, isNull);
+      });
+
+      test('asks a repository on a second sheet when an answer makes it '
+          'publish', () async {
+        final plan =
+            await makePlanner(
+              check: _skipBWhenAIs('1.2.4'),
+              editText: editor(
+                (text) => text.contains('"A"')
+                    ? '{"A": {"versionIncrement": "major"}}'
+                    : text,
+              ),
+            ).plan(
+              ticketDir: ticketDir,
+              subs: [node('A'), node('B')],
+              ggLog: ggLog,
+              wording: PublishPlanWording.review,
+            );
+
+        expect(sheets, hasLength(2));
+        expect(sheets[0], isNot(contains('"B"')));
+        // A was asked already — only B is on the second sheet.
+        expect(sheets[1], contains('"B": {'));
+        expect(sheets[1], isNot(contains('"A"')));
+        expect(plan.publishes, {'A', 'B'});
+        expect(plan.configs['A']!.versionIncrement, VersionIncrement.major);
+        expect(plan.configs['B']!.versionIncrement, VersionIncrement.patch);
+      });
+
+      test('shows what alsoShow repos recorded, not the -m of the open '
+          'ones', () async {
+        await gg.RepoPublishConfig(
+          versionIncrement: VersionIncrement.minor,
+          mergeMessage: 'recorded A',
+        ).save(file: gg.repoPublishConfigFile(repoDir('A')));
+
+        final plan = await makePlanner(editText: editor((text) => text)).plan(
+          ticketDir: ticketDir,
+          subs: [node('A'), node('B')],
+          ggLog: ggLog,
+          defaultMergeMessage: 'From -m',
+          wording: PublishPlanWording.review,
+        );
+
+        expect(sheets.single, contains('"mergeMessage": ["recorded A"]'));
+        expect(sheets.single, contains('"mergeMessage": ["From -m"]'));
+        expect(plan.configs['A']!.mergeMessage, 'recorded A');
+        expect(plan.configs['B']!.mergeMessage, 'From -m');
+      });
+
+      test('keeps the recorded increments in a merge-only run', () async {
+        await gg.RepoPublishConfig(
+          versionIncrement: VersionIncrement.minor,
+          mergeMessage: 'recorded A',
+        ).save(file: gg.repoPublishConfigFile(repoDir('A')));
+        await gg.RepoPublishConfig(versionIncrement: VersionIncrement.major)
+            .save(file: gg.repoPublishConfigFile(repoDir('B')));
+
+        final plan = await makePlanner(editText: editor((text) => text)).plan(
+          ticketDir: ticketDir,
+          subs: [node('A'), node('B')],
+          ggLog: ggLog,
+          mergeOnly: true,
+          wording: PublishPlanWording.review,
+        );
+
+        expect(sheets.single, contains('"A": {'));
+        expect(plan.configs['A']!.versionIncrement, VersionIncrement.minor);
+        expect(plan.configs['A']!.mergeMessage, 'recorded A');
+        expect(plan.configs['B']!.versionIncrement, VersionIncrement.major);
+        expect(plan.configs['B']!.mergeMessage, 'Publish B');
+      });
+
+      test('asks no increment in a merge-only run', () async {
+        final plan = await makePlanner(editText: editor((text) => text)).plan(
+          ticketDir: ticketDir,
+          subs: [node('A')],
+          ggLog: ggLog,
+          mergeOnly: true,
+          wording: PublishPlanWording.review,
+        );
+
+        expect(sheets.single, isNot(contains('"versionIncrement"')));
+        expect(plan.configs['A']!.versionIncrement, isNull);
+        expect(plan.configs['A']!.mergeMessage, 'Publish A');
+      });
+
+      test('falls back to one prompt per repository when the editor '
+          'fails', () async {
+        var opened = 0;
+        final plan =
+            await makePlanner(
+              increments: [1],
+              editText: ({required prompt, required text, required fileName}) {
+                opened++;
+                throw Exception('code exited with 1');
+              },
+            ).plan(
+              ticketDir: ticketDir,
+              subs: [node('A'), node('B')],
+              ggLog: ggLog,
+              defaultMergeMessage: 'The change',
+            );
+
+        // The editor is not tried again for B.
+        expect(opened, 1);
+        expect(seeds, ['The change', 'The change']);
+        expect(plan.configs['A']!.versionIncrement, VersionIncrement.minor);
+        expect(plan.configs['B']!.versionIncrement, VersionIncrement.minor);
+        expect(
+          messages.join('\n'),
+          contains('Could not edit the messages in the editor'),
+        );
+      });
+    });
+
+    group('without an editor', () {
+      test('looks the registry version up once per repository', () async {
+        // The sheet looked it up before the editor turned out to be missing;
+        // the prompt reuses that lookup instead of failing a second time.
+        await makePlanner(baselineThrows: true)
+            .plan(ticketDir: ticketDir, subs: [node('A')], ggLog: ggLog);
+
+        expect(
+          messages.where(
+            (m) => m.contains('Could not determine the published version'),
+          ),
+          hasLength(1),
+        );
+      });
+
+      test('asks a dependent nothing when the answer before it keeps it in '
+          'range', () async {
+        // The old order: A is asked first, and B is judged by that answer.
+        final plan = await makePlanner(check: _skipBWhenAIs('1.2.4')).plan(
+          ticketDir: ticketDir,
+          subs: [node('A'), node('B')],
+          ggLog: ggLog,
+          defaultMergeMessage: 'The change',
+        );
+
+        expect(seeds, ['The change']);
+        expect(plan.publishes, {'A'});
+      });
+
+      test('asks one repository at a time, so an answer can drop the '
+          'next', () async {
+        // A's recorded major makes B publish — until A is answered with
+        // patch. B is never prompted, and keeps its file as it was.
+        await gg.RepoPublishConfig(versionIncrement: VersionIncrement.major)
+            .save(file: gg.repoPublishConfigFile(repoDir('A')));
+        await gg.RepoPublishConfig(mergeMessage: 'recorded B')
+            .save(file: gg.repoPublishConfigFile(repoDir('B')));
+
+        final adapter = _StubAdapter([0]); // patch
+        final plan =
+            await makePlanner(
+              adapter: adapter,
+              check: _skipBWhenAIs('1.2.4'),
+            ).plan(
+              ticketDir: ticketDir,
+              subs: [node('A'), node('B')],
+              ggLog: ggLog,
+              defaultMergeMessage: 'The change',
+            );
+
+        expect(seeds, ['The change']);
+        expect(adapter.capturedOptions, hasLength(1));
+        expect(plan.publishes, {'A'});
+        expect(plan.configs['B']!.mergeMessage, 'recorded B');
+        expect(plan.configs['B']!.versionIncrement, isNull);
+      });
+
+      test('asks nothing when everything is recorded', () async {
+        // The old path: no editor, recorded answers, no reconfigure.
+        await gg.RepoPublishConfig(
+          versionIncrement: VersionIncrement.minor,
+          mergeMessage: 'recorded A',
+        ).save(file: gg.repoPublishConfigFile(repoDir('A')));
+        await gg.RepoPublishConfig(
+          versionIncrement: VersionIncrement.patch,
+          mergeMessage: 'recorded B',
+        ).save(file: gg.repoPublishConfigFile(repoDir('B')));
+        final bBefore = gg
+            .repoPublishConfigFile(repoDir('B'))
+            .readAsStringSync();
+
+        final adapter = _StubAdapter(const []);
+        final plan =
+            await makePlanner(
+              adapter: adapter,
+              check: _skipBWhenAIs('1.3.0'),
+            ).plan(
+              ticketDir: ticketDir,
+              subs: [node('A'), node('B')],
+              ggLog: ggLog,
+            );
+        await plan.save();
+
+        expect(seeds, isEmpty);
+        expect(adapter.capturedOptions, isEmpty);
+        expect(plan.publishes, {'A'});
+        expect(
+          gg.repoPublishConfigFile(repoDir('B')).readAsStringSync(),
+          bBefore,
+        );
+      });
+    });
+
+    group('--no-interactive', () {
+      test('takes the ticket description as merge message', () async {
+        File(path.join(ticketDir.path, 'ticket.json'))
+            .writeAsStringSync('{"description": "Ticket desc"}');
+
+        final plan = await makePlanner(increments: const []).plan(
+          ticketDir: ticketDir,
+          subs: [node('A')],
+          ggLog: ggLog,
+          interactive: false,
+          requireAnswers: false,
+        );
+
+        expect(seeds, isEmpty);
+        expect(plan.entryFor('A')!.mergeMessage, 'Ticket desc');
+        expect(plan.entryFor('A')!.versionIncrement, isNull);
+        expect(plan.defaultedMessages, {'A'});
+      });
+
+      test('save can leave the defaulted messages out', () async {
+        // A headless review must not record a default as an answer: the
+        // `-m` of the publish after it would no longer win.
+        await gg.RepoPublishConfig(
+          versionIncrement: VersionIncrement.minor,
+          commits: [gg.CommitMessage(firstLine: 'A work')],
+        ).save(file: gg.repoPublishConfigFile(repoDir('A')));
+        await gg.RepoPublishConfig(mergeMessage: 'recorded B')
+            .save(file: gg.repoPublishConfigFile(repoDir('B')));
+
+        final plan = await makePlanner(increments: const []).plan(
+          ticketDir: ticketDir,
+          subs: [node('A'), node('B')],
+          ggLog: ggLog,
+          interactive: false,
+          requireAnswers: false,
+          defaultMergeMessage: 'From -m',
+        );
+        expect(plan.configs['A']!.mergeMessage, 'From -m');
+        expect(plan.defaultedMessages, {'A'});
+
+        await plan.save(keepDefaultedMessages: false);
+        final a = gg.RepoPublishConfig.tryLoad(repoDir('A'))!;
+        expect(a.mergeMessage, isNull);
+        expect(a.versionIncrement, VersionIncrement.minor);
+        expect(a.commits.single.firstLine, 'A work');
+        expect(
+          gg.RepoPublishConfig.tryLoad(repoDir('B'))!.mergeMessage,
+          'recorded B',
+        );
+
+        // `gg do publish` records them: the release reads them back.
+        await plan.save();
+        expect(
+          gg.RepoPublishConfig.tryLoad(repoDir('A'))!.mergeMessage,
+          'From -m',
+        );
+      });
+
+      test('fails a run that needs a missing increment', () async {
+        await expectLater(
+          () => makePlanner(increments: const []).plan(
+            ticketDir: ticketDir,
+            subs: [node('A')],
+            ggLog: ggLog,
+            interactive: false,
+            defaultMergeMessage: 'msg',
+          ),
+          throwsA(
+            isA<Exception>().having(
+              (e) => rmControls(e.toString()),
+              'message',
+              contains('A needs a publish'),
+            ),
+          ),
+        );
+      });
+    });
+
     group('the version dependents are judged against', () {
       /// Plans A → B and returns the refVersions B was judged with. The skip
       /// check is the capture point: it sees exactly what the pass predicted
@@ -749,11 +1215,57 @@ void main() {
         expect(refVersions, isNot(contains('a')));
       });
 
-      test('falls back to 0.0.0 when the registry lookup fails', () async {
+      test('is unknown when the registry lookup fails', () async {
+        // The 0.0.0 the increment preview assumes is no version to judge a
+        // dependent against.
         manifestOfA('0.0.1');
         expect(
           await refVersionsOfB(baselineThrows: true),
-          containsPair('a', '0.0.1'),
+          isNot(contains('a')),
+        );
+      });
+
+      test('is unknown when the lookup for the sheet failed', () async {
+        manifestOfA('0.0.1');
+        final captured = <Map<String, String>>[];
+        final check = MockPublishSkipCheck();
+        when(
+          () => check.get(
+            repo: any(named: 'repo'),
+            refVersions: any(named: 'refVersions'),
+          ),
+        ).thenAnswer((invocation) async {
+          captured.add(
+            Map<String, String>.from(
+              invocation.namedArguments[#refVersions] as Map<String, String>,
+            ),
+          );
+          return const PublishSkipDecision(skip: false, reason: 'changed');
+        });
+        final sheets = <String>[];
+
+        await makePlanner(
+          check: check,
+          baselineThrows: true,
+          editText:
+              ({required prompt, required text, required fileName}) async {
+                sheets.add(text);
+                return text;
+              },
+        ).plan(
+          ticketDir: ticketDir,
+          subs: [node('A'), node('B')],
+          ggLog: ggLog,
+        );
+
+        expect(sheets, hasLength(1));
+        // No preview without a baseline …
+        expect(sheets.single, isNot(contains('→ patch')));
+        // … and no prediction either.
+        expect(captured.last, isNot(contains('a')));
+        expect(
+          messages.join('\n'),
+          contains('Could not determine the published version of A'),
         );
       });
 
