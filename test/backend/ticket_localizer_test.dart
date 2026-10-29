@@ -9,12 +9,27 @@ import 'dart:io';
 
 import 'package:gg_local_package_dependencies/gg_local_package_dependencies.dart';
 import 'package:gg_localize_refs/gg_localize_refs.dart';
-import 'package:gg_multi_core/src/backend/ticket_localizer.dart';
+import 'package:gg_multi_core/gg_multi_core.dart';
 import 'package:gg_one_core/gg_one_core.dart' as gg;
 import 'package:gg_process/gg_process.dart';
 import 'package:gg_status_printer/gg_status_printer.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
+
+class MockGitHubPlatform extends Mock implements GitHubPlatform {}
+
+class MockRepoFreshness extends Mock implements RepoFreshness {}
+
+/// Fails like a platform that cannot be reached at all.
+class ThrowingMissingOceanRepos extends MissingOceanRepos {
+  @override
+  Future<MissingOceanReposReport> find({
+    required String oceanPath,
+    String? ticketPath,
+    Iterable<Directory> roots = const <Directory>[],
+  }) => throw Exception('boom');
+}
 
 void main() {
   late Directory tmp;
@@ -407,6 +422,284 @@ void main() {
         );
 
         expect(messages, missingWarning(['c']));
+      });
+    });
+
+    // .........................................................................
+    group('organization repos missing from the ocean', () {
+      late MockGitHubPlatform gitHub;
+
+      /// [localizer] for an ocean of organization `org`, which offers [repos].
+      void orgOffers(List<String> repos, {bool listable = true}) {
+        write(
+          ocean,
+          '.organizations',
+          jsonEncode([
+            Organization(name: 'org', url: 'https://github.com/org/').toMap(),
+          ]),
+        );
+        gitHub = MockGitHubPlatform();
+        final answer = when(() => gitHub.fetchOrgRepos('org'));
+        if (listable) {
+          answer.thenAnswer(
+            (_) async => [
+              for (final name in repos)
+                Repository(
+                  name: name,
+                  httpsUrl: 'https://github.com/org/$name',
+                ),
+            ],
+          );
+        } else {
+          answer.thenThrow(Exception('gh not authenticated'));
+        }
+        localizer = TicketLocalizer(
+          ggLog: ggLog,
+          processRunner: fakeRunner,
+          missingOceanRepos: MissingOceanRepos(
+            repoLists: OrganizationRepoLists(gitHubPlatform: gitHub),
+          ),
+        );
+      }
+
+      /// A ticket {a, d}: a depends on the ocean's c, which depends on x —
+      /// a repo of the organization the ocean lacks.
+      Future<void> ticketMissingX() async {
+        await repo('a', {
+          'pubspec.yaml': pubspec('a', ['c']),
+        });
+        await repo('d', {'pubspec.yaml': pubspec('d')});
+        oceanRepo('c', ['x']);
+      }
+
+      setUp(OrganizationUtils.clearCache);
+      tearDown(OrganizationUtils.clearCache);
+
+      test('check reports them and is not in sync', () async {
+        orgOffers(['a', 'c', 'd', 'x']);
+        await ticketMissingX();
+
+        final result = await localizer.check(
+          ticketDir: ticket,
+          repos: await nodes(),
+        );
+
+        expect(result.missingFromOcean.map((r) => r.repoName), ['x']);
+        expect(
+          result.missingFromOcean.single.manifestPath,
+          path.join(ocean.path, 'org', 'c', 'pubspec.yaml'),
+        );
+        expect(result.isInSync, isFalse);
+      });
+
+      test('check reports none when the lookup fails', () async {
+        await ticketMissingX();
+        localizer = TicketLocalizer(
+          ggLog: ggLog,
+          processRunner: fakeRunner,
+          missingOceanRepos: ThrowingMissingOceanRepos(),
+        );
+
+        final result = await localizer.check(
+          ticketDir: ticket,
+          repos: await nodes(),
+        );
+
+        expect(result.missingFromOcean, isEmpty);
+      });
+
+      test('throwWhenOutOfSync only warns about them', () async {
+        orgOffers(['x']);
+        await ticketMissingX();
+        await localizer.localize(repos: await nodes(), ggLog: ggLog);
+        messages.clear();
+
+        await localizer.throwWhenOutOfSync(
+          ticketDir: ticket,
+          repos: await nodes(),
+          ggLog: ggLog,
+        );
+
+        expect(messages, [
+          '\n⚠️ Repos the ticket depends on, but not in the ocean:',
+          '  - x (x in ${path.join(ocean.path, 'org', 'c', 'pubspec.yaml')})',
+          'Run gg do add x in ${tmp.path} to clone them into the ocean.\n',
+        ]);
+      });
+
+      group('throwWhenReposMissing', () {
+        test('passes silently when nothing is missing', () async {
+          orgOffers(['a', 'b']);
+          await repo('a', {
+            'pubspec.yaml': pubspec('a', ['b']),
+          });
+          await repo('b', {'pubspec.yaml': pubspec('b')});
+          messages.clear();
+
+          await localizer.throwWhenReposMissing(
+            ticketDir: ticket,
+            ggLog: ggLog,
+          );
+
+          expect(messages, isEmpty);
+        });
+
+        test('fails naming the repos missing from the ocean and between the '
+            'ticket repos, each with its command', () async {
+          orgOffers(['x']);
+          await ticketMissingC();
+          // c also depends on x, which the ocean lacks.
+          oceanRepo('c', ['d', 'x']);
+          messages.clear();
+
+          await expectLater(
+            localizer.throwWhenReposMissing(ticketDir: ticket, ggLog: ggLog),
+            throwsA(
+              isA<Exception>().having(
+                (e) => rmControls('$e'),
+                'message',
+                'Exception: The ocean lacks x. The ticket lacks c.',
+              ),
+            ),
+          );
+          expect(
+            messages,
+            containsAllInOrder([
+              'Run gg do add x in ${tmp.path} to clone them into the ocean.\n',
+              'Run gg do add c to add them.\n',
+            ]),
+          );
+        });
+
+        test('fails when the search fails', () async {
+          await ticketMissingX();
+          localizer = TicketLocalizer(
+            ggLog: ggLog,
+            processRunner: fakeRunner,
+            missingOceanRepos: ThrowingMissingOceanRepos(),
+          );
+
+          await expectLater(
+            localizer.throwWhenReposMissing(ticketDir: ticket, ggLog: ggLog),
+            throwsA(
+              isA<Exception>().having((e) => '$e', 'message', contains('boom')),
+            ),
+          );
+        });
+
+        test('warns when the ocean graph does not build', () async {
+          orgOffers(const []);
+          await repo('a', {'pubspec.yaml': pubspec('a')});
+          oceanRepo('x', ['y']);
+          oceanRepo('y', ['x']);
+          messages.clear();
+
+          await localizer.throwWhenReposMissing(
+            ticketDir: ticket,
+            ggLog: ggLog,
+          );
+
+          expect(messages, [
+            '⚠️ The dependency graph of the ocean does not build: repos '
+                'between the ticket repos would go unnoticed.',
+          ]);
+        });
+
+        test('refreshes a stale ocean repo before blocking on it', () async {
+          // c's checkout still depends on d; its remote dropped that edge.
+          orgOffers(const []);
+          await ticketMissingC();
+          final freshness = MockRepoFreshness();
+          final refreshed = <String>[];
+          when(
+            () => freshness.updateAll(
+              ggLog: any(named: 'ggLog'),
+              directories: any(named: 'directories'),
+              workspacePath: any(named: 'workspacePath'),
+            ),
+          ).thenAnswer((invocation) async {
+            final dirs =
+                invocation.namedArguments[#directories] as List<Directory>;
+            refreshed.addAll(dirs.map((d) => path.basename(d.path)));
+            oceanRepo('c');
+          });
+          localizer = TicketLocalizer(
+            ggLog: ggLog,
+            processRunner: fakeRunner,
+            missingOceanRepos: MissingOceanRepos(
+              repoLists: OrganizationRepoLists(gitHubPlatform: gitHub),
+            ),
+            repoFreshness: freshness,
+          );
+          messages.clear();
+
+          await localizer.throwWhenReposMissing(
+            ticketDir: ticket,
+            ggLog: ggLog,
+          );
+
+          expect(refreshed, ['c']);
+          expect(messages, isEmpty);
+        });
+
+        test('still blocks when the refresh fails', () async {
+          orgOffers(const []);
+          await ticketMissingC();
+          final freshness = MockRepoFreshness();
+          when(
+            () => freshness.updateAll(
+              ggLog: any(named: 'ggLog'),
+              directories: any(named: 'directories'),
+              workspacePath: any(named: 'workspacePath'),
+            ),
+          ).thenThrow(Exception('c has uncommitted changes'));
+          localizer = TicketLocalizer(
+            ggLog: ggLog,
+            processRunner: fakeRunner,
+            missingOceanRepos: MissingOceanRepos(
+              repoLists: OrganizationRepoLists(gitHubPlatform: gitHub),
+            ),
+            repoFreshness: freshness,
+          );
+
+          await expectLater(
+            localizer.throwWhenReposMissing(ticketDir: ticket, ggLog: ggLog),
+            throwsA(
+              isA<Exception>().having(
+                (e) => rmControls('$e'),
+                'message',
+                'Exception: The ticket lacks c.',
+              ),
+            ),
+          );
+        });
+
+        test('warns about the organizations it could not list', () async {
+          orgOffers(const [], listable: false);
+          await ticketMissingX();
+          messages.clear();
+
+          await localizer.throwWhenReposMissing(
+            ticketDir: ticket,
+            ggLog: ggLog,
+          );
+
+          expect(messages, [
+            '⚠️ Could not list the repositories of org: a repository of it '
+                'the ocean lacks would go unnoticed.',
+          ]);
+        });
+
+        test('passes without an ocean', () async {
+          await repo('a', {'pubspec.yaml': pubspec('a')});
+
+          await localizer.throwWhenReposMissing(
+            ticketDir: ticket,
+            ggLog: ggLog,
+          );
+
+          expect(messages, isEmpty);
+        });
       });
     });
 
