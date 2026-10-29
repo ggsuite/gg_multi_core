@@ -4,6 +4,7 @@
 // Use of this source code is governed by terms that can be
 // found in the LICENSE file in the root of this package.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -13,8 +14,36 @@ import 'package:gg_multi_core/src/backend/organization_repo_lists.dart';
 import 'package:gg_multi_core/src/backend/organization_utils.dart';
 import 'package:gg_multi_core/src/backend/repo_folder_resolver.dart';
 import 'package:gg_multi_core/src/backend/repository.dart';
+import 'package:gg_multi_core/src/backend/url_parser.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import 'package:pubspec_parse/pubspec_parse.dart';
+import 'package:yaml/yaml.dart';
+
+/// Answers whether pub.dev hosts [package]: true or false, null when pub.dev
+/// could not be asked.
+typedef PubDevPackageExists = Future<bool?> Function(String package);
+
+/// Asks the pub.dev API whether it hosts [package]; null when it does not
+/// answer within five seconds or answers with anything but 200 or 404.
+/// [get] replaces the request in tests.
+Future<bool?> pubDevPackageExists(
+  String package, {
+  Future<http.Response> Function(Uri url) get = http.get,
+}) async {
+  try {
+    final response = await get(
+      Uri.parse('https://pub.dev/api/packages/$package'),
+    ).timeout(const Duration(seconds: 5));
+    return switch (response.statusCode) {
+      200 => true,
+      404 => false,
+      _ => null,
+    };
+  } catch (_) {
+    return null;
+  }
+}
 
 /// A repository of a known organization that a manifest depends on.
 class OrganizationRepo {
@@ -50,12 +79,59 @@ class MissingOceanRepo {
   String get repoName => owners.first.repo.name;
 }
 
+/// Why a dependency counts as one gg cannot see.
+enum InaccessibleReason {
+  /// A hosted Dart dependency pub.dev does not know: no third-party package,
+  /// and no repository an organization lists either.
+  notOnPubDev,
+
+  /// A git dependency whose url points into a known organization that does
+  /// not list the repository.
+  gitUrlOfOrganization,
+
+  /// An npm package scoped with a known organization that does not list the
+  /// repository.
+  organizationScope,
+}
+
+/// A dependency that is neither in the ocean nor a third-party package, and
+/// that no organization lists — most likely a private repository the account
+/// cannot see.
+class InaccessibleDependency {
+  /// Constructor.
+  const InaccessibleDependency({
+    required this.dependency,
+    required this.manifestPath,
+    required this.repoName,
+    required this.reason,
+    required this.organizations,
+  });
+
+  /// The dependency as the manifest writes it.
+  final String dependency;
+
+  /// Absolute path of the first manifest declaring it.
+  final String manifestPath;
+
+  /// The repository name it most likely has.
+  final String repoName;
+
+  /// What makes it look like a repository of an organization.
+  final InaccessibleReason reason;
+
+  /// The organizations it most likely belongs to: the one its url or scope
+  /// names, else every organization that was listed.
+  final List<Organization> organizations;
+}
+
 /// What [MissingOceanRepos.find] found.
 class MissingOceanReposReport {
   /// Constructor.
   const MissingOceanReposReport({
     this.missing = const <MissingOceanRepo>[],
     this.unchecked = const <Organization>[],
+    this.failures = const <String, String>{},
+    this.inaccessible = const <InaccessibleDependency>[],
   });
 
   /// The dependencies to clone into the ocean, sorted by repository name.
@@ -64,6 +140,16 @@ class MissingOceanReposReport {
   /// The organizations whose repositories could not be listed: a dependency
   /// they own cannot be told from a third-party package.
   final List<Organization> unchecked;
+
+  /// Why each organization of [unchecked] could not be listed, by its name.
+  final Map<String, String> failures;
+
+  /// Why [org] could not be listed, as [failures] records it.
+  String failureOf(Organization org) => failures[org.name] ?? 'no reason given';
+
+  /// Dependencies that look like repositories of an organization the account
+  /// cannot see, sorted by dependency.
+  final List<InaccessibleDependency> inaccessible;
 }
 
 /// Finds the repositories the ticket depends on that a known organization
@@ -79,12 +165,21 @@ class MissingOceanReposReport {
 /// repository lists the platforms report ([OrganizationRepoLists]), not by
 /// registry metadata: a package that is not published yet, or whose
 /// `repository` field points elsewhere, is still found by its name.
+///
+/// A list only names what the account may see, so a private repository it
+/// has no access to is missing from it. Such a dependency is reported as
+/// [InaccessibleDependency] when nothing else explains it.
 class MissingOceanRepos {
   /// Constructor. [repoLists] lists the repositories of the organizations;
   /// share one instance per run so each organization is listed once.
-  MissingOceanRepos({OrganizationRepoLists? repoLists})
+  /// [pubDevPackageExists] asks pub.dev about a package no lock file knows.
+  MissingOceanRepos({
+    OrganizationRepoLists? repoLists,
+    PubDevPackageExists? pubDevPackageExists,
     // coverage:ignore-start
-    : _repoLists = repoLists ?? OrganizationRepoLists();
+  }) : _repoLists = repoLists ?? OrganizationRepoLists(),
+       _pubDevPackageExists =
+           pubDevPackageExists ?? _defaultPubDevPackageExists;
   // coverage:ignore-end
 
   // ...........................................................................
@@ -95,7 +190,9 @@ class MissingOceanRepos {
   /// Only regular dependencies count — the ones a dependent resolves, and so
   /// the only ones that can put a repo between two ticket repos. Asks the
   /// platforms only when a dependency is unresolved and an organization is
-  /// known; without `.organizations` nothing leaves the machine.
+  /// known; without `.organizations` nothing leaves the machine. pub.dev is
+  /// asked only about a hosted dependency no `pubspec.lock` of the walked
+  /// repos resolved from it, once per package and instance.
   Future<MissingOceanReposReport> find({
     required String oceanPath,
     String? ticketPath,
@@ -107,13 +204,13 @@ class MissingOceanRepos {
     }
 
     final orgNames = orgs.map((o) => o.name.toLowerCase()).toSet();
-    final unresolved = _unresolvedDependencies(
+    final walk = _walk(
       oceanPath: oceanPath,
       ticketPath: ticketPath,
       roots: roots,
       orgNames: orgNames,
     );
-    if (unresolved.isEmpty) {
+    if (walk.unresolved.isEmpty) {
       return const MissingOceanReposReport();
     }
 
@@ -122,33 +219,116 @@ class MissingOceanRepos {
       for (var i = 0; i < orgs.length; i++)
         if (lists[i] == null) orgs[i],
     ];
+    final listed = <Organization>[
+      for (var i = 0; i < orgs.length; i++)
+        if (lists[i] != null) orgs[i],
+    ];
+    List<Repository>? listOf(Organization org) => lists[orgs.indexOf(org)];
+    Organization? orgNamed(String? name) {
+      final wanted = name?.toLowerCase();
+      return orgs.where((o) => o.name.toLowerCase() == wanted).firstOrNull;
+    }
 
     final missing = <MissingOceanRepo>[];
-    for (final MapEntry(key: dependency, value: manifestPath)
-        in unresolved.entries) {
-      final repoName = _repoNameOf(dependency, orgNames);
-      if (repoName == null) {
-        continue;
+    final inaccessible = <InaccessibleDependency>[];
+    final askPubDev = <String, _Unresolved>{};
+
+    for (final MapEntry(key: dependency, value: info)
+        in walk.unresolved.entries) {
+      final gitTarget = info.gitUrl == null
+          ? null
+          : const UrlParser().parse(info.gitUrl!);
+      final candidate = gitTarget?.repo ?? dependency;
+      final repoName = _repoNameOf(candidate, orgNames);
+
+      if (repoName != null) {
+        final owners = <OrganizationRepo>[
+          for (var i = 0; i < orgs.length; i++)
+            for (final repo in lists[i] ?? const <Repository>[])
+              if (_normalize(repo.name) == repoName)
+                OrganizationRepo(organization: orgs[i], repo: repo),
+        ];
+        if (owners.isNotEmpty) {
+          missing.add(
+            MissingOceanRepo(
+              dependency: dependency,
+              manifestPath: info.manifestPath,
+              owners: owners,
+            ),
+          );
+          continue;
+        }
       }
-      final owners = <OrganizationRepo>[
-        for (var i = 0; i < orgs.length; i++)
-          for (final repo in lists[i] ?? const <Repository>[])
-            if (_normalize(repo.name) == repoName)
-              OrganizationRepo(organization: orgs[i], repo: repo),
-      ];
-      if (owners.isNotEmpty) {
-        missing.add(
-          MissingOceanRepo(
-            dependency: dependency,
-            manifestPath: manifestPath,
-            owners: owners,
+
+      // No organization lists it. Whatever names an organization it belongs
+      // to is a repository the account cannot see; a list that could not be
+      // fetched proves nothing, its organization is reported as unchecked.
+      switch (info.kind) {
+        case _Kind.git:
+          final org = orgNamed(gitTarget?.org);
+          if (org != null && listOf(org) != null) {
+            inaccessible.add(
+              InaccessibleDependency(
+                dependency: dependency,
+                manifestPath: info.manifestPath,
+                repoName: candidate,
+                reason: InaccessibleReason.gitUrlOfOrganization,
+                organizations: [org],
+              ),
+            );
+          }
+        case _Kind.npm:
+          final org = _hasOrgScope(dependency, orgNames)
+              ? orgNamed(dependency.substring(1, dependency.indexOf('/')))
+              : null;
+          if (org != null && listOf(org) != null) {
+            inaccessible.add(
+              InaccessibleDependency(
+                dependency: dependency,
+                manifestPath: info.manifestPath,
+                repoName: _bareName(dependency),
+                reason: InaccessibleReason.organizationScope,
+                organizations: [org],
+              ),
+            );
+          }
+        case _Kind.pubDev:
+          if (!walk.lockedFromPubDev.contains(dependency)) {
+            askPubDev[dependency] = info;
+          }
+        case _Kind.otherHosted:
+          // A private package server: neither pub.dev nor the lists decide.
+          break;
+      }
+    }
+
+    final names = askPubDev.keys.toList();
+    final answers = await Future.wait(names.map(_isOnPubDev));
+    for (var i = 0; i < names.length; i++) {
+      if (answers[i] == false) {
+        inaccessible.add(
+          InaccessibleDependency(
+            dependency: names[i],
+            manifestPath: askPubDev[names[i]]!.manifestPath,
+            repoName: names[i],
+            reason: InaccessibleReason.notOnPubDev,
+            organizations: listed.isEmpty ? orgs : listed,
           ),
         );
       }
     }
 
     missing.sort((a, b) => a.repoName.compareTo(b.repoName));
-    return MissingOceanReposReport(missing: missing, unchecked: unchecked);
+    inaccessible.sort((a, b) => a.dependency.compareTo(b.dependency));
+    return MissingOceanReposReport(
+      missing: missing,
+      unchecked: unchecked,
+      failures: <String, String>{
+        for (final org in unchecked)
+          org.name: _repoLists.failureOf(org) ?? 'no reason given',
+      },
+      inaccessible: inaccessible,
+    );
   }
 
   // ######################
@@ -156,11 +336,24 @@ class MissingOceanRepos {
   // ######################
 
   final OrganizationRepoLists _repoLists;
+  final PubDevPackageExists _pubDevPackageExists;
+  final Map<String, Future<bool?>> _pubDevAnswers = {};
+
+  // coverage:ignore-start
+  static Future<bool?> _defaultPubDevPackageExists(String package) =>
+      pubDevPackageExists(package);
+  // coverage:ignore-end
+
+  // ...........................................................................
+  Future<bool?> _isOnPubDev(String package) =>
+      _pubDevAnswers.putIfAbsent(package, () => _pubDevPackageExists(package));
 
   // ...........................................................................
   /// The dependencies reachable from the ticket repos and [roots] that no repo
-  /// provides, each with the first manifest declaring it.
-  static Map<String, String> _unresolvedDependencies({
+  /// provides, each with the first manifest declaring it, and the packages
+  /// the `pubspec.lock` files of the walked repos resolved from pub.dev.
+  static ({Map<String, _Unresolved> unresolved, Set<String> lockedFromPubDev})
+  _walk({
     required String oceanPath,
     required String? ticketPath,
     required Iterable<Directory> roots,
@@ -187,7 +380,8 @@ class MissingOceanRepos {
         byName[_normalize(path.basename(root.path))] ?? root,
     ];
 
-    final unresolved = <String, String>{};
+    final unresolved = <String, _Unresolved>{};
+    final lockedFromPubDev = <String>{};
     final visited = <String>{};
     final queue = <Directory>[...starts];
     while (queue.isNotEmpty) {
@@ -195,7 +389,8 @@ class MissingOceanRepos {
       if (!visited.add(path.normalize(dir.path))) {
         continue;
       }
-      for (final (:name, :manifestPath) in _regularDependencies(dir)) {
+      lockedFromPubDev.addAll(_lockedFromPubDev(dir));
+      for (final (:name, :info) in _regularDependencies(dir)) {
         // The scope is dropped only for an organization's own packages:
         // `@babel/core` is not the ocean's repo `core`.
         final provider =
@@ -206,20 +401,20 @@ class MissingOceanRepos {
         if (provider != null) {
           queue.add(provider);
         } else {
-          unresolved.putIfAbsent(name, () => manifestPath);
+          unresolved.putIfAbsent(name, () => info);
         }
       }
     }
-    return unresolved;
+    return (unresolved: unresolved, lockedFromPubDev: lockedFromPubDev);
   }
 
   // ...........................................................................
   /// The regular dependencies the manifests of [dir] declare: `dependencies`
   /// of `pubspec.yaml` (without SDK and path ones) and of `package.json`.
-  static List<({String name, String manifestPath})> _regularDependencies(
+  static List<({String name, _Unresolved info})> _regularDependencies(
     Directory dir,
   ) {
-    final result = <({String name, String manifestPath})>[];
+    final result = <({String name, _Unresolved info})>[];
 
     final pubspecFile = File(path.join(dir.path, 'pubspec.yaml'));
     if (pubspecFile.existsSync()) {
@@ -229,10 +424,25 @@ class MissingOceanRepos {
           lenient: true,
         );
         for (final MapEntry(:key, :value) in pubspec.dependencies.entries) {
-          if (value is SdkDependency || value is PathDependency) {
+          final kind = switch (value) {
+            GitDependency() => _Kind.git,
+            HostedDependency(:final hosted)
+                when _isPubDev(hosted?.url?.toString()) =>
+              _Kind.pubDev,
+            HostedDependency() => _Kind.otherHosted,
+            _ => null,
+          };
+          if (kind == null) {
             continue;
           }
-          result.add((name: key, manifestPath: pubspecFile.path));
+          result.add((
+            name: key,
+            info: _Unresolved(
+              manifestPath: pubspecFile.path,
+              kind: kind,
+              gitUrl: value is GitDependency ? '${value.url}' : null,
+            ),
+          ));
         }
       } catch (_) {
         // An unparseable manifest declares nothing that could be checked.
@@ -246,7 +456,13 @@ class MissingOceanRepos {
         final deps = json is Map<String, dynamic> ? json['dependencies'] : null;
         if (deps is Map<String, dynamic>) {
           for (final name in deps.keys) {
-            result.add((name: name, manifestPath: packageJsonFile.path));
+            result.add((
+              name: name,
+              info: _Unresolved(
+                manifestPath: packageJsonFile.path,
+                kind: _Kind.npm,
+              ),
+            ));
           }
         }
       } catch (_) {
@@ -256,6 +472,41 @@ class MissingOceanRepos {
 
     return result;
   }
+
+  // ...........................................................................
+  /// The packages the `pubspec.lock` of [dir] resolved from pub.dev: they
+  /// exist there, so pub.dev need not be asked about them.
+  static Set<String> _lockedFromPubDev(Directory dir) {
+    final lockFile = File(path.join(dir.path, 'pubspec.lock'));
+    if (!lockFile.existsSync()) {
+      return const <String>{};
+    }
+    try {
+      final lock = loadYaml(lockFile.readAsStringSync());
+      final packages = lock is YamlMap ? lock['packages'] : null;
+      if (packages is! YamlMap) {
+        return const <String>{};
+      }
+      return <String>{
+        for (final MapEntry(:key, :value) in packages.entries)
+          if (value is YamlMap &&
+              value['source'] == 'hosted' &&
+              _isPubDev((value['description'] as YamlMap?)?['url']?.toString()))
+            '$key',
+      };
+    } catch (_) {
+      return const <String>{};
+    }
+  }
+
+  // ...........................................................................
+  /// Whether [url] — a `hosted` url, null for the default — is pub.dev.
+  static bool _isPubDev(String? url) =>
+      url == null ||
+      const [
+        'https://pub.dev',
+        'https://pub.dartlang.org',
+      ].contains(url.replaceAll(RegExp(r'/+$'), ''));
 
   // ...........................................................................
   /// The normalized repository name [dependency] can stand for, or null when
@@ -293,4 +544,20 @@ class MissingOceanRepos {
   /// and a Dart package `gg_bridge` stands for the repository `gg-bridge`.
   static String _normalize(String name) =>
       name.toLowerCase().replaceAll('-', '_');
+}
+
+/// Where an unresolved dependency comes from.
+enum _Kind { pubDev, otherHosted, git, npm }
+
+/// An unresolved dependency: the first manifest declaring it and its kind.
+class _Unresolved {
+  const _Unresolved({
+    required this.manifestPath,
+    required this.kind,
+    this.gitUrl,
+  });
+
+  final String manifestPath;
+  final _Kind kind;
+  final String? gitUrl;
 }

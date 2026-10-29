@@ -13,6 +13,7 @@ export 'src/backend/git_platform.dart';
 export 'src/backend/graph_package_dirs.dart';
 export 'src/backend/message_editor_theme.dart';
 export 'src/backend/missing_ocean_repos.dart';
+export 'src/backend/missing_repo_messages.dart';
 export 'src/backend/ocean_migration.dart';
 export 'src/backend/organization.dart';
 export 'src/backend/organization_repo_lists.dart';

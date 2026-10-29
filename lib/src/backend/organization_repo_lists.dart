@@ -46,6 +46,11 @@ class OrganizationRepoLists {
   Future<List<Repository>?> reposOf(Organization org) =>
       _lists.putIfAbsent(_keyOf(org), () => _fetch(org));
 
+  /// Why [reposOf] answered null for [org] — the error of the platform CLI,
+  /// or that its platform cannot be listed at all. Null while [reposOf] was
+  /// not awaited for it, and for an organization that was listed.
+  String? failureOf(Organization org) => _failures[_keyOf(org)];
+
   /// Whether [org] currently offers a repository named [repoName], or null
   /// when the platform cannot say (see [reposOf]).
   ///
@@ -67,6 +72,7 @@ class OrganizationRepoLists {
   final GitHubPlatform _gitHubPlatform;
   final AzureDevOpsPlatform _azureDevOpsPlatform;
   final Map<String, Future<List<Repository>?>> _lists = {};
+  final Map<String, String> _failures = {};
 
   // ...........................................................................
   /// Identifies [org] across `Organization` instances that name the same one:
@@ -87,12 +93,28 @@ class OrganizationRepoLists {
             project: org.projectName,
           );
         default:
+          _failures[_keyOf(org)] =
+              'only GitHub and Azure DevOps organizations can be listed, '
+              'not ${org.url}';
           return null;
       }
-    } catch (_) {
+    } catch (e) {
       // The platform could not be asked — nothing here may end a run that
-      // has a fallback for exactly this case.
+      // has a fallback for exactly this case. The reason is kept: it is what
+      // tells the developer what to fix.
+      _failures[_keyOf(org)] = plainError(e);
       return null;
     }
   }
 }
+
+// .............................................................................
+/// [error] as one line a report can show: without the `Exception: ` prefix,
+/// without colors and with its lines joined.
+String plainError(Object error) => '$error'
+    .replaceAll(RegExp(r'\x1B\[[0-9;]*m'), '')
+    .replaceFirst(RegExp(r'^Exception: '), '')
+    .split(RegExp(r'\r?\n'))
+    .map((line) => line.trim())
+    .where((line) => line.isNotEmpty)
+    .join(' ');
