@@ -176,7 +176,11 @@ class PublishPlanEntry {
 /// The outcome of [PublishPlanner.plan].
 class PublishPlan {
   /// Constructor
-  const PublishPlan({required this.entries, required this.configs});
+  const PublishPlan({
+    required this.entries,
+    required this.configs,
+    this.defaultedMessages = const <String>{},
+  });
 
   /// One entry per ticket repository, in dependency order.
   final List<PublishPlanEntry> entries;
@@ -185,14 +189,30 @@ class PublishPlan {
   /// were loaded, extended by the answers the pass collected.
   final Map<String, gg.RepoPublishConfig> configs;
 
+  /// The repositories whose merge message in [configs] nobody gave: nobody
+  /// could be asked, so it took its default — `-m` or the ticket description.
+  final Set<String> defaultedMessages;
+
   /// Writes every repository's answers to its own `publish_config.json`.
   ///
   /// The hand-over between `gg do review` and `gg do publish`: whoever runs
   /// second finds the answers pre-selected instead of unanswered.
-  Future<void> save() async {
+  ///
+  /// [keepDefaultedMessages] false leaves the [defaultedMessages] out. A
+  /// headless `gg do review` passes it: a recorded message counts as answered,
+  /// so the default would beat the `-m` of the `gg do publish` that follows —
+  /// which derives the very same default itself when it is given none.
+  Future<void> save({bool keepDefaultedMessages = true}) async {
     for (final entry in entries) {
-      final config = configs[entry.name];
+      var config = configs[entry.name];
       if (config == null) continue;
+      if (!keepDefaultedMessages && defaultedMessages.contains(entry.name)) {
+        config = gg.RepoPublishConfig(
+          versionIncrement: config.versionIncrement,
+          nextCommitMessage: config.nextCommitMessage,
+          commits: config.commits,
+        );
+      }
       await config.save(file: gg.repoPublishConfigFile(entry.directory));
     }
   }
@@ -252,12 +272,14 @@ class PublishPlanner {
     ReadManifestVersion? readManifestVersion,
     gg.VersionSelector? versionSelector,
     EditMessage? editMessage,
+    gg.EditText? editText,
     gg.HasTerminal? hasTerminal,
   }) : _publishSkipCheck = publishSkipCheck ?? PublishSkipCheck(),
        _publishedVersion = publishedVersion ?? PublishedVersion(ggLog: ggLog),
        _readManifestVersion = readManifestVersion ?? defaultReadManifestVersion,
        _versionSelector = versionSelector ?? gg.VersionSelector(),
        _editMessage = editMessage ?? _defaultEditMessage,
+       _editText = editText ?? gg.defaultEditText,
        _hasTerminal = hasTerminal ?? gg.stdioHasTerminal;
 
   /// The log function
@@ -278,6 +300,9 @@ class PublishPlanner {
   /// Opens an interactive editor for a repository's merge message.
   final EditMessage _editMessage;
 
+  /// Opens the questions of all repositories as one sheet in the editor.
+  final gg.EditText _editText;
+
   /// Whether stdin and stdout are a terminal — else nobody can answer.
   final gg.HasTerminal _hasTerminal;
 
@@ -296,8 +321,16 @@ class PublishPlanner {
   /// earlier answer. Without it only unanswered questions are asked, so a
   /// `gg do publish` after a review asks nothing again.
   ///
+  /// The questions of all repositories are shown at once, as one sheet in the
+  /// editor, next to the recorded answers of the other publishing
+  /// repositories. Without an editor — or when it fails — they are asked one
+  /// by one, a repository at a time, in dependency order.
+  ///
   /// [ask] turns the questions off altogether — the pass then only decides
-  /// which repositories publish. [requireAnswers] decides what happens when a
+  /// which repositories publish. [interactive] false (`--no-interactive`)
+  /// asks nothing either, but behaves like a run without a terminal: a merge
+  /// message nobody recorded takes its default, a missing increment fails a
+  /// run that needs one. [requireAnswers] decides what happens when a
   /// repository needs an answer and there is no terminal: `gg do publish`
   /// fails (it cannot release without an increment), `gg do review` passes
   /// false and leaves the question to the publish — its own job, filtering the
@@ -310,6 +343,7 @@ class PublishPlanner {
     bool publishUnchanged = false,
     bool mergeOnly = false,
     bool ask = true,
+    bool interactive = true,
     bool reconfigure = false,
     bool requireAnswers = true,
     String? defaultMergeMessage,
@@ -320,33 +354,92 @@ class PublishPlanner {
         explicitMessage != null && explicitMessage.isNotEmpty;
     final ticketSeed = seedMessageFor(ticketDir: ticketDir);
 
+    final run = _PlanRun(
+      ticketDir: ticketDir,
+      subs: subs,
+      continueRun: continueRun,
+      publishUnchanged: publishUnchanged,
+      mergeOnly: mergeOnly,
+      ask: ask,
+      talks: ask && interactive && _hasTerminal(),
+      reconfigure: reconfigure,
+      requireAnswers: requireAnswers,
+      // An explicit `-m` is an instruction for this run and beats what an
+      // earlier one recorded; without it the recorded answer is the default,
+      // and the ticket description the last resort.
+      seedFor: (config) => hasExplicitMessage
+          ? explicitMessage
+          : config.mergeMessage ?? ticketSeed,
+      wording: wording,
+    );
+
+    // The answers change what a pass decides: an increment that breaks the
+    // dependents makes them publish too. So the pass runs again after every
+    // round of questions, until it finds nothing new to ask. Each repository
+    // is asked at most once.
+    _run = run;
+    try {
+      while (true) {
+        final pass = await _pass(run);
+        if (pass.toAsk.isEmpty) {
+          pass.logs.forEach(ggLog);
+          // A repository asked in an earlier round may have dropped out since
+          // — an answer before it changed what it is judged against. It is
+          // not released, so it keeps exactly what it had recorded.
+          for (final entry in pass.entries) {
+            if (!entry.publishes) {
+              run.configs[entry.name] = run.files[entry.name]!.config;
+            }
+          }
+          return PublishPlan(
+            entries: pass.entries,
+            configs: run.configs,
+            defaultedMessages: run.defaulted,
+          );
+        }
+        await _ask(run, pass);
+      }
+    } finally {
+      _run = null;
+    }
+  }
+
+  /// The [plan] call in progress — [configureRepo] reuses its registry
+  /// lookups instead of repeating them.
+  _PlanRun? _run;
+
+  // ...........................................................................
+  /// Decides for every repository whether it publishes, and which of the
+  /// publishing ones still have to be asked — without asking anything.
+  Future<_PlanPass> _pass(_PlanRun run) async {
     // The versions later repos are judged against. A skipped repo contributes
     // its unchanged manifest version, a publishing one the version its chosen
     // increment will produce — computed exactly like gg_one computes it, from
     // the version last seen on the registry.
     final refVersions = <String, String>{};
-    final configs = <String, gg.RepoPublishConfig>{};
-    final entries = <PublishPlanEntry>[];
+    final pass = _PlanPass();
 
-    for (final repo in subs) {
+    for (final repo in run.subs) {
       final repoDir = repo.directory;
       final repoName = path.basename(repoDir.path);
-      final files = loadTicketRepoPublishFiles(
-        repoDir: repoDir,
-        ticketDir: ticketDir,
+      final files = run.files.putIfAbsent(
+        repoName,
+        () => loadTicketRepoPublishFiles(
+          repoDir: repoDir,
+          ticketDir: run.ticketDir,
+        ),
       );
-      var repoConfig = files.config;
-      configs[repoName] = repoConfig;
+      var repoConfig = run.configs.putIfAbsent(repoName, () => files.config);
 
       final alreadyPublished =
-          continueRun && (files.state.status == 'published');
+          run.continueRun && (files.state.status == 'published');
 
       final bool doesPublish;
       final String reason;
       if (alreadyPublished) {
         doesPublish = false;
-        reason = 'already ${wording.done}';
-      } else if (publishUnchanged) {
+        reason = 'already ${run.wording.done}';
+      } else if (run.publishUnchanged) {
         doesPublish = true;
         reason = '--publish-unchanged';
       } else if (repoHasPublishStepProgress(repoDir)) {
@@ -361,70 +454,67 @@ class PublishPlanner {
         reason = decision.reason;
       }
 
-      Version? baseline;
-
-      if (doesPublish) {
-        // A reconfiguring pass asks EVERY time, with the recorded answers
-        // pre-selected — that is what re-running `gg do review` or
-        // `gg do configure-publish` means. Every other pass asks only what
-        // the configuration leaves open, so a `gg do publish` right after a
-        // review does not ask the very questions the review just answered.
-        final answered = _configAnswers(repoConfig, mergeOnly);
-        if ((reconfigure || !answered) &&
-            _canAsk(
-              repoName: repoName,
-              wording: wording,
-              ask: ask,
-              must: requireAnswers,
-              hasAnswers: answered,
-            )) {
-          ggLog('\n${cH1(repoName)}');
-          // An explicit `-m` is an instruction for this run and beats what
-          // an earlier one recorded; without it the recorded answer is the
-          // default, and the ticket description the last resort.
-          final asked = await configureRepo(
-            repoDir: repoDir,
-            seedMessage: hasExplicitMessage
-                ? explicitMessage
-                : repoConfig.mergeMessage ?? ticketSeed,
-            existing: repoConfig,
-            mergeOnly: mergeOnly,
+      if (!doesPublish) {
+        // Whatever an earlier round answered for it is not released.
+        repoConfig = files.config;
+        if (!alreadyPublished) {
+          pass.logs.add(
+            [
+              '\n${cH1(repoName)}',
+              cDetail('✓ ${'${run.wording.skipPrefix} $reason'.trim()}'),
+            ].join('\n'),
           );
-          repoConfig = asked.config;
-          configs[repoName] = repoConfig;
-          baseline = asked.baseline;
         }
-      } else if (!alreadyPublished) {
-        ggLog(
-          [
-            '\n${cH1(repoName)}',
-            cDetail('✓ ${'${wording.skipPrefix} $reason'.trim()}'),
-          ].join('\n'),
-        );
+      } else if (!run.asked.contains(repoName)) {
+        // Nobody to ask, or nobody who wants to be asked: the merge message
+        // takes its default instead of staying open.
+        final seed = run.seedFor(repoConfig);
+        if (!run.talks && repoConfig.mergeMessage == null && seed.isNotEmpty) {
+          repoConfig = repoConfig.copyWith(mergeMessage: seed);
+          run.configs[repoName] = repoConfig;
+          run.defaulted.add(repoName);
+        }
+
+        // A reconfiguring pass asks EVERY time, with the recorded answers
+        // pre-selected — that is what `gg do review --reask-version` and
+        // `gg do configure-publish` mean. Every other pass asks only what the
+        // configuration leaves open, so a `gg do publish` right after a review
+        // does not ask the very questions the review just answered.
+        final answered = _configAnswers(repoConfig, run.mergeOnly);
+        if (_canAsk(run, repoName: repoName, hasAnswers: answered)) {
+          pass.shown.add(repo);
+          if (run.reconfigure || !answered) {
+            pass.toAsk.add(repo);
+          }
+        }
       }
 
-      final increment = repoConfig.versionIncrement?.name;
-      entries.add(
+      pass.entries.add(
         PublishPlanEntry(
           name: repoName,
           directory: repoDir,
           publishes: doesPublish,
           reason: reason,
           alreadyPublished: alreadyPublished,
-          versionIncrement: increment,
+          versionIncrement: repoConfig.versionIncrement?.name,
           mergeMessage: repoConfig.mergeMessage,
           pullRequestBody: repoConfig.pullRequestBody,
         ),
       );
 
-      // Predict what later repos will resolve against.
+      // Predict what later repos will resolve against. A repository about to
+      // be asked is predicted with the increment its question starts with, so
+      // its dependents are judged as they will most likely be — not as if
+      // its version were unknown, which would ask them for nothing.
       final predicted = await _predictedVersion(
+        run,
         repoDir: repoDir,
+        repoName: repoName,
         doesPublish: doesPublish,
-        mergeOnly: mergeOnly,
-        increment: increment,
+        increment:
+            repoConfig.versionIncrement ??
+            (pass.toAsk.contains(repo) ? VersionIncrement.patch : null),
         channel: files.state.channel,
-        baseline: baseline,
       );
 
       for (final name in (await publishedNames(repoDir, repoName)).values) {
@@ -438,7 +528,132 @@ class PublishPlanner {
       }
     }
 
-    return PublishPlan(entries: entries, configs: configs);
+    return pass;
+  }
+
+  // ...........................................................................
+  /// Asks the open questions of [pass] — on one sheet in the editor, next to
+  /// the recorded answers of the other publishing repositories, so the user
+  /// sees every release of the ticket at once.
+  ///
+  /// Without an editor, or when it fails, only the first open repository is
+  /// asked, one prompt per question: its answer may change whether the ones
+  /// after it publish at all, so they wait for the next pass.
+  Future<void> _ask(_PlanRun run, _PlanPass pass) async {
+    if (run.sheet) {
+      try {
+        if (await _askOnSheet(run, pass)) {
+          return;
+        }
+      } catch (e) {
+        ggLog(cWarn('⚠️ Could not edit the messages in the editor: $e'));
+      }
+      // The editor does not come back within this run.
+      run.sheet = false;
+    }
+
+    final repo = pass.toAsk.first;
+    final repoName = path.basename(repo.directory.path);
+    run.asked.add(repoName);
+
+    ggLog('\n${cH1(repoName)}');
+    final config = run.configs[repoName]!;
+    final asked = await configureRepo(
+      repoDir: repo.directory,
+      seedMessage: run.seedFor(config),
+      existing: config,
+      mergeOnly: run.mergeOnly,
+    );
+    run.configs[repoName] = asked.config;
+  }
+
+  // ...........................................................................
+  /// Shows the repositories of [pass] on one sheet and takes over what the
+  /// user saved. False when no editor can be opened.
+  Future<bool> _askOnSheet(_PlanRun run, _PlanPass pass) async {
+    if (!run.mergeOnly) {
+      for (final repo in pass.shown) {
+        await _lookUpBaseline(
+          run,
+          path.basename(repo.directory.path),
+          repo.directory,
+        );
+      }
+    }
+
+    final edited =
+        await gg.MessageSheet(
+          entries: [
+            for (final repo in pass.shown)
+              _sheetEntry(run, repo, open: pass.toAsk.contains(repo)),
+          ],
+        ).edit(
+          title: run.wording.command,
+          fileName: '${path.basename(run.ticketDir.path)}_publish.jsonc',
+          editText: _editText,
+        );
+    if (edited == null) {
+      return false;
+    }
+
+    for (final entry in edited) {
+      run.asked.add(entry.repo);
+      // A field the sheet does not show — the increment of a merge-only run —
+      // keeps what is recorded. The recorded answers of the repositories
+      // shown for the overview come back as they were, unless edited.
+      run.configs[entry.repo] = run.configs[entry.repo]!.copyWith(
+        mergeMessage: entry.mergeMessage,
+        versionIncrement: entry.versionIncrement,
+      );
+    }
+    return true;
+  }
+
+  /// The sheet entry of [repo]. An [open] one starts with the defaults of its
+  /// questions; one shown only for the overview with exactly what it has
+  /// recorded, so saving the sheet unchanged changes nothing for it — not
+  /// even when `-m` seeds the open ones.
+  gg.MessageSheetEntry _sheetEntry(
+    _PlanRun run,
+    Node repo, {
+    required bool open,
+  }) {
+    final repoName = path.basename(repo.directory.path);
+    final config = run.configs[repoName]!;
+    final seed = open ? run.seedFor(config) : config.mergeMessage!;
+    return gg.MessageSheetEntry(
+      repo: repoName,
+      mergeMessage: seed.isEmpty ? 'Publish $repoName' : seed,
+      versionIncrement: run.mergeOnly
+          ? null
+          : config.versionIncrement ?? VersionIncrement.patch,
+      baseline: run.baselines[repoName],
+    );
+  }
+
+  /// Looks the registry version of [repoName] up once per run. A failed
+  /// lookup is remembered as null: it only costs the preview, and makes the
+  /// prediction unknown instead of a guess based on 0.0.0.
+  Future<void> _lookUpBaseline(
+    _PlanRun run,
+    String repoName,
+    Directory repoDir,
+  ) async {
+    if (!run.baselines.containsKey(repoName)) {
+      run.baselines[repoName] = await _registryVersion(repoDir);
+    }
+  }
+
+  /// The version the increment preview of [repoDir] starts from — looked up
+  /// once per [plan] call, 0.0.0 when it cannot be determined.
+  Future<Version> _previewBaseline(Directory repoDir) async {
+    final run = _run;
+    if (run == null) {
+      return await _registryVersion(repoDir) ?? Version(0, 0, 0);
+    }
+    final repoName = path.basename(repoDir.path);
+    await _lookUpBaseline(run, repoName, repoDir);
+    return run.baselines[repoName] ?? Version(0, 0, 0);
   }
 
   // ...........................................................................
@@ -465,6 +680,10 @@ class PublishPlanner {
   ///
   /// The baseline travels with the answers so the caller can predict the
   /// version this repo will publish — without a second registry lookup.
+  /// Within [plan] the lookup is shared with the sheet and the predictions.
+  ///
+  /// A merge-only run asks no increment and keeps the recorded one: a merge
+  /// releases nothing, and the answer stays for a later release.
   ///
   /// No repository header is logged here; the caller owns it, because it
   /// alone knows whether it has something to say about this repo at all.
@@ -475,15 +694,15 @@ class PublishPlanner {
     bool mergeOnly = false,
   }) async {
     final repoName = path.basename(repoDir.path);
-    final baseline = await _baselineVersion(repoDir);
+    final base = await _previewBaseline(repoDir);
 
     // A merge-only run releases nothing — no version bump, no changelog
     // heading, no tag. Asking for an increment would offer a version that
-    // is never created, so the prompt is skipped and none is stored.
+    // is never created, so the prompt is skipped.
     final increment = mergeOnly
         ? null
         : await _versionSelector.selectIncrement(
-            currentVersion: baseline,
+            currentVersion: base,
             preselect: existing?.versionIncrement,
           );
 
@@ -503,17 +722,14 @@ class PublishPlanner {
       message = 'Publish $repoName';
     }
 
+    // The AI-maintained halves (nextCommitMessage, commits) are carried over
+    // untouched.
     return RepoPublishPlan(
-      // Built explicitly rather than via copyWith: a merge-only run must
-      // clear a recorded increment, not inherit it. The AI-maintained halves
-      // (nextCommitMessage, commits) are carried over untouched.
-      config: gg.RepoPublishConfig(
+      config: (existing ?? gg.RepoPublishConfig()).copyWith(
         mergeMessage: message,
         versionIncrement: increment,
-        nextCommitMessage: existing?.nextCommitMessage,
-        commits: existing?.commits,
       ),
-      baseline: baseline,
+      baseline: base,
     );
   }
 
@@ -584,33 +800,26 @@ class PublishPlanner {
   // ...........................................................................
   /// Whether the questions for [repoName] can be asked at all.
   ///
-  /// An interactive run always asks — the recorded answers become the
+  /// A run that talks always asks — the recorded answers become the
   /// pre-selected defaults, so a choice made earlier stays correctable.
   /// Without a terminal the recorded answers are used as they are
   /// ([hasAnswers]); only when they do not cover the run and it cannot go on
-  /// without them ([must]) does this throw. Returns false when the caller
-  /// turned the questions off ([ask]) or can live without them.
-  bool _canAsk({
+  /// without them does this throw. Returns false when the caller turned the
+  /// questions off or can live without them.
+  bool _canAsk(
+    _PlanRun run, {
     required String repoName,
-    required PublishPlanWording wording,
-    required bool ask,
-    required bool must,
     required bool hasAnswers,
   }) {
-    if (!ask) {
-      return false;
-    }
-    if (_hasTerminal()) {
+    if (run.talks) {
       return true;
     }
     // Nobody can be asked. A configuration that answers everything — a
     // `--config` run, CI — is exactly what this case is for.
-    if (hasAnswers) {
+    if (!run.ask || hasAnswers || !run.requireAnswers) {
       return false;
     }
-    if (!must) {
-      return false;
-    }
+    final wording = run.wording;
     throw Exception(
       cError(
         '$repoName needs a ${wording.action}, but no version increment / '
@@ -626,19 +835,20 @@ class PublishPlanner {
   /// The version later repos will resolve this repository against.
   ///
   /// A repo that does not publish keeps its manifest version — that is exact.
-  /// A publishing one gets [baseline] plus the chosen increment, the same
-  /// arithmetic gg_one performs. Everything undecidable answers null, which
-  /// makes dependents publish instead of trusting a guess.
-  Future<String?> _predictedVersion({
+  /// A publishing one gets its registry version plus [increment], the same
+  /// arithmetic gg_one performs. Everything undecidable answers null — also a
+  /// registry lookup that failed —, which makes dependents publish instead of
+  /// trusting a guess.
+  Future<String?> _predictedVersion(
+    _PlanRun run, {
     required Directory repoDir,
+    required String repoName,
     required bool doesPublish,
-    required bool mergeOnly,
-    required String? increment,
+    required VersionIncrement? increment,
     required String? channel,
-    required Version? baseline,
   }) async {
     // A merge releases nothing, so no version changes.
-    if (!doesPublish || mergeOnly) {
+    if (!doesPublish || run.mergeOnly) {
       return _readManifestVersion(repoDir);
     }
 
@@ -648,14 +858,17 @@ class PublishPlanner {
     }
 
     try {
-      final base =
-          baseline ??
-          await _publishedVersion.get(directory: repoDir, ggLog: (_) {});
+      final base = run.baselines.containsKey(repoName)
+          ? run.baselines[repoName]
+          : await _publishedVersion.get(directory: repoDir, ggLog: (_) {});
+      if (base == null) {
+        return null;
+      }
       return switch (increment) {
-        'major' => base.nextMajor.toString(),
-        'minor' => base.nextMinor.toString(),
-        'patch' => base.nextPatch.toString(),
-        _ => null,
+        VersionIncrement.major => base.nextMajor.toString(),
+        VersionIncrement.minor => base.nextMinor.toString(),
+        VersionIncrement.patch => base.nextPatch.toString(),
+        null => null,
       };
     } catch (_) {
       return null;
@@ -672,24 +885,24 @@ class PublishPlanner {
   /// which is the normal state after a publish, since only main carries the
   /// released version — would preview a version the publish never creates.
   ///
-  /// Defaults to 0.0.0 when nothing can be determined (e.g. a repo without a
-  /// version). A failing lookup (e.g. the registry is unreachable) is reported
-  /// instead of being swallowed, so a network hiccup does not silently look
-  /// like a repo that was never published.
+  /// Null when nothing can be determined. A failing lookup (e.g. the registry
+  /// is unreachable) is reported instead of being swallowed, so a network
+  /// hiccup does not silently look like a repo that was never published.
   ///
   /// *Every* failure lands here, not just `Exception`s: a folder that is no
   /// git repository makes the tag fallback throw an `ArgumentError`, and no
   /// lookup for a version preview may ever fail the run around it.
-  Future<Version> _baselineVersion(Directory repoDir) async {
+  Future<Version?> _registryVersion(Directory repoDir) async {
     try {
       return await _publishedVersion.get(directory: repoDir, ggLog: ggLog);
     } catch (e) {
       ggLog(
         cWarn(
-          '⚠️ Could not determine the published version, assuming 0.0.0: $e',
+          '⚠️ Could not determine the published version of '
+          '${path.basename(repoDir.path)}: $e',
         ),
       );
-      return Version(0, 0, 0);
+      return null;
     }
   }
 
@@ -704,6 +917,77 @@ class PublishPlanner {
         hint: 'pass -m <message> or provide a config file via --config',
       );
   // coverage:ignore-end
+}
+
+// .............................................................................
+/// What stays the same across the passes of one [PublishPlanner.plan] call.
+class _PlanRun {
+  _PlanRun({
+    required this.ticketDir,
+    required this.subs,
+    required this.continueRun,
+    required this.publishUnchanged,
+    required this.mergeOnly,
+    required this.ask,
+    required this.talks,
+    required this.reconfigure,
+    required this.requireAnswers,
+    required this.seedFor,
+    required this.wording,
+  });
+
+  final Directory ticketDir;
+  final List<Node> subs;
+  final bool continueRun;
+  final bool publishUnchanged;
+  final bool mergeOnly;
+  final bool ask;
+
+  /// Whether the run asks its questions: it wants to, and somebody is there
+  /// to answer them.
+  final bool talks;
+  final bool reconfigure;
+  final bool requireAnswers;
+
+  /// The merge message a repository with [config] starts with.
+  final String Function(gg.RepoPublishConfig config) seedFor;
+  final PublishPlanWording wording;
+
+  /// The publish files of each repository, read once — what they record is
+  /// what a repository keeps when it turns out not to publish.
+  final files = <String, gg.RepoPublishFiles>{};
+
+  /// The answers of each repository: the loaded ones, then the asked ones.
+  final configs = <String, gg.RepoPublishConfig>{};
+
+  /// The registry versions looked up so far — null where the lookup failed.
+  final baselines = <String, Version?>{};
+
+  /// The repositories whose questions were shown already.
+  final asked = <String>{};
+
+  /// The repositories whose merge message took its default, unasked.
+  final defaulted = <String>{};
+
+  /// Whether the questions still go on one sheet in the editor. Off once no
+  /// editor could be opened, or it failed.
+  bool sheet = true;
+}
+
+// .............................................................................
+/// The outcome of one pass of [PublishPlanner.plan].
+class _PlanPass {
+  final entries = <PublishPlanEntry>[];
+
+  /// The publishing repositories not asked yet, in dependency order — those
+  /// with an open question, and those shown next to them for the overview.
+  final shown = <Node>[];
+
+  /// The repositories of [shown] with a question to ask.
+  final toAsk = <Node>{};
+
+  /// The lines of the repositories that are not published.
+  final logs = <String>[];
 }
 
 // .............................................................................
