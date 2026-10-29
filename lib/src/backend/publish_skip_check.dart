@@ -214,14 +214,14 @@ class PublishSkipCheck {
   // ...........................................................................
   /// The version constraints [repoDir] publishes for [names].
   ///
-  /// The specs backed up by gg_localize_refs come first — they hold the
-  /// original refs while the manifest may be localized to path/git refs.
-  /// A name without a backup entry, or with one that carries no version
-  /// constraint, falls back to the constraint currently declared in the
-  /// manifest. The second case is the rule for pnpm-managed TypeScript:
-  /// its refs are redirected through the overrides of pnpm-workspace.yaml,
-  /// so package.json keeps the published range the whole time, while a
-  /// backup — if there is one at all — may hold nothing but a `link:` ref.
+  /// The constraint the manifest declares comes first: gg_localize_refs
+  /// keeps it in place today — Dart redirects the refs through
+  /// `pubspec_overrides.yaml`, pnpm-managed TypeScript through the overrides
+  /// of pnpm-workspace.yaml. Only a manifest localized the old way, with a
+  /// path, git or `link:` ref instead of a constraint, falls back to the
+  /// specs gg_localize_refs backed up. A backup never overrides a declared
+  /// constraint: old checkouts still track backups from years ago, and their
+  /// stale ranges made every new version of a dependency look breaking.
   /// A null value means the constraint could not be determined.
   Map<String, _PublishedConstraint?> _declaredConstraints(
     Directory repoDir,
@@ -235,7 +235,7 @@ class PublishSkipCheck {
     for (final name in names) {
       final isNpm = npmNames.contains(name);
       final constraint =
-          _constraintFromSpec(saved[name], isNpm: isNpm) ?? manifest[name];
+          manifest[name] ?? _constraintFromSpec(saved[name], isNpm: isNpm);
       result[name] = constraint == null
           ? null
           : _PublishedConstraint(constraint, isNpm: isNpm);
