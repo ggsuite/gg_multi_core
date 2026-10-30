@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 4.15.0 - 2026-10-30
 
 ### Added
 
