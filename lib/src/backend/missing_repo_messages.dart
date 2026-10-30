@@ -130,19 +130,27 @@ List<String> missingFromOceanReport(
 }
 
 // .............................................................................
-/// The report about [names], ocean repos between the ticket repos that the
-/// ticket lacks.
-List<String> missingBetweenReport(List<String> names) => <String>[
-  cWarn('\n⚠️ Repos between the ticket repos, but not in it:'),
-  for (final name in names) cWarn('  - $name'),
-  cDetail(
-    '  They depend on a ticket repo, and a ticket repo depends on them. '
-    'Released without them, they keep their old version constraints.',
-  ),
-  cAction('Run ') +
-      cCmd('gg do add ${names.join(' ')}') +
-      cAction(' to add them.\n'),
-];
+/// The report about [names], ocean repos the ticket lacks between its repos
+/// and the [breaking] ones, whose release breaks its dependents.
+List<String> missingBetweenReport(
+  List<String> names, {
+  required Iterable<String> breaking,
+}) {
+  final releases = (breaking.toList()..sort()).join(' ');
+  return <String>[
+    cWarn('\n⚠️ Repos between the ticket repos, but not in it:'),
+    for (final name in names) cWarn('  - $name'),
+    cDetail(
+      '  They depend on $releases, whose next release breaks its '
+      'dependents, and a ticket repo depends on them. Released without '
+      'them, they keep the old version and the ticket repos above resolve '
+      'two incompatible ones.',
+    ),
+    cAction('Run ') +
+        cCmd('gg do add transitive for $releases') +
+        cAction(' to add them.\n'),
+  ];
+}
 
 // .............................................................................
 /// The report about an ocean dependency graph that does not build.

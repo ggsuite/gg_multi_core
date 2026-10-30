@@ -12,13 +12,15 @@ import 'package:gg_lang/gg_lang.dart' as gg_lang;
 import 'package:gg_local_package_dependencies/gg_local_package_dependencies.dart';
 import 'package:gg_localize_refs/gg_localize_refs.dart';
 import 'package:gg_log/gg_log.dart';
-import 'package:gg_multi_core/src/backend/graph_package_dirs.dart';
+import 'package:gg_multi_core/src/backend/breaking_release.dart';
 import 'package:gg_multi_core/src/backend/missing_ocean_repos.dart';
 import 'package:gg_multi_core/src/backend/missing_repo_messages.dart';
 import 'package:gg_multi_core/src/backend/organization_repo_lists.dart';
+import 'package:gg_multi_core/src/backend/publish_planner.dart';
 import 'package:gg_multi_core/src/backend/repo_dependencies.dart';
 import 'package:gg_multi_core/src/backend/repo_folder_resolver.dart';
 import 'package:gg_multi_core/src/backend/repo_freshness.dart';
+import 'package:gg_multi_core/src/backend/repos_between.dart';
 import 'package:gg_multi_core/src/backend/workspace_utils.dart';
 import 'package:gg_one_core/gg_one_core.dart' as gg;
 import 'package:mocktail/mocktail.dart' as mocktail;
@@ -30,6 +32,7 @@ class TicketRefsStatus {
   const TicketRefsStatus({
     this.unlocalized = const <String, List<UnlocalizedRef>>{},
     this.missingRepos = const <String>[],
+    this.breakingRepos = const <String>{},
     this.missingFromOcean = const <MissingOceanRepo>[],
     this.oceanReport = const MissingOceanReposReport(),
     this.graphError,
@@ -39,8 +42,13 @@ class TicketRefsStatus {
   /// The out-of-sync references per repo, keyed by its `Directory.path`.
   final Map<String, List<UnlocalizedRef>> unlocalized;
 
-  /// Ocean repos between two ticket repos the ticket lacks, by folder name.
+  /// Ocean repos the ticket lacks between its repos and [breakingRepos], by
+  /// folder name.
   final List<String> missingRepos;
+
+  /// The ticket repos whose recorded release breaks its dependents — the
+  /// only ones whose dependents [missingRepos] lists.
+  final Set<String> breakingRepos;
 
   /// Organization repos the ticket depends on that the ocean lacks. While
   /// they are missing, [missingRepos] cannot see a repo between ticket repos
@@ -93,12 +101,14 @@ class TicketLocalizer {
     ProcessRunner? processRunner,
     MissingOceanRepos? missingOceanRepos,
     RepoFreshness? repoFreshness,
+    ReadManifestVersion? readManifestVersion,
   }) : _changeRefsToLocal = localizeRefs ?? ChangeRefsToLocal(ggLog: ggLog),
        _backupPublishTo = backupPublishTo ?? BackupPublishTo(ggLog: ggLog),
        _refsCheck = unlocalizedRefs ?? UnlocalizedRefs(ggLog: ggLog),
        _systemCommit = systemCommit ?? gg.GgSystemCommit(ggLog: ggLog),
        _ggState = ggState ?? gg.GgState(ggLog: ggLog),
-       _graph = graph ?? Graph(ggLog: ggLog),
+       _reposBetween = ReposBetween(ggLog: ggLog, graph: graph),
+       _readManifestVersion = readManifestVersion ?? defaultReadManifestVersion,
        _processRunner = processRunner ?? defaultProcessRunner,
        _missingOceanRepos = missingOceanRepos ?? MissingOceanRepos(),
        _repoFreshness = repoFreshness ?? RepoFreshness(ggLog: ggLog),
@@ -312,7 +322,8 @@ class TicketLocalizer {
   final UnlocalizedRefs _refsCheck;
   final gg.GgSystemCommit _systemCommit;
   final gg.GgState _ggState;
-  final Graph _graph;
+  final ReposBetween _reposBetween;
+  final ReadManifestVersion _readManifestVersion;
   final ProcessRunner _processRunner;
   final MissingOceanRepos _missingOceanRepos;
   final RepoFreshness _repoFreshness;
@@ -354,6 +365,7 @@ class TicketLocalizer {
     return TicketRefsStatus(
       unlocalized: unlocalized,
       missingRepos: missing.between,
+      breakingRepos: missing.breaking,
       missingFromOcean: missing.fromOcean.missing,
       oceanReport: missing.fromOcean,
       graphError: missing.graphError,
@@ -363,24 +375,32 @@ class TicketLocalizer {
   // ...........................................................................
   /// The repos the ticket lacks: the organization repos missing from the
   /// ocean — the graph cannot see through them — and the ocean repos between
-  /// the ticket repos. `graphError` says why the ocean graph does not build;
-  /// `between` is empty then.
+  /// the ticket repos and the `breaking` ones — [breaking], or by default the
+  /// ones whose recorded release breaks its dependents (see [ReposBetween]).
+  /// `graphError` says why the ocean graph does not build; `between` is empty
+  /// then.
   ///
   /// Advisory by default: a failing search reports nothing. With [strict] its
   /// error is thrown — the publish gate must not pass because it broke.
   Future<
     ({
       List<String> between,
+      Set<String> breaking,
       String? graphError,
       MissingOceanReposReport fromOcean,
     })
   >
-  _findMissing(Directory ticketDir, {bool strict = false}) async {
+  _findMissing(
+    Directory ticketDir, {
+    bool strict = false,
+    Set<String>? breaking,
+  }) async {
     final ticketPath = path.absolute(ticketDir.path);
     final oceanPath = _oceanPathOf(ticketDir);
     if (!Directory(oceanPath).existsSync()) {
       return (
         between: const <String>[],
+        breaking: const <String>{},
         graphError: null,
         fromOcean: const MissingOceanReposReport(),
       );
@@ -399,12 +419,21 @@ class TicketLocalizer {
       fromOcean = const MissingOceanReposReport();
     }
 
-    final between = await _missingRepos(
+    // Only a breaking release strands the repos above it: any other version
+    // fits the constraints they already have.
+    breaking ??= await recordedBreakingRepos(
+      repoDirs: RepoFolderResolver.repoDirs(ticketPath),
+      ticketDir: ticketDir,
+      readManifestVersion: _readManifestVersion,
+    );
+    final between = await _reposBetween.find(
       ticketPath: ticketPath,
       oceanPath: oceanPath,
+      from: breaking,
     );
     return (
       between: between.names,
+      breaking: breaking,
       graphError: between.error,
       fromOcean: fromOcean,
     );
@@ -422,19 +451,34 @@ class TicketLocalizer {
   /// The ocean is not refreshed by the commands before: a repo reported
   /// between the ticket repos is brought to its remote state first and the
   /// search repeated, so an edge its stale checkout still has cannot block.
+  ///
+  /// [breaking] names the releases that break, when the caller knows them
+  /// better than the recorded increments do — a plan, or a merge that
+  /// releases nothing (empty).
   Future<void> throwWhenReposMissing({
     required Directory ticketDir,
     required GgLog ggLog,
+    Set<String>? breaking,
   }) async {
-    var missing = await _findMissing(ticketDir, strict: true);
+    var missing = await _findMissing(
+      ticketDir,
+      strict: true,
+      breaking: breaking,
+    );
     String? staleOceanError;
     if (missing.between.isNotEmpty) {
       staleOceanError = await _refreshOceanRepos(ticketDir, missing.between);
-      missing = await _findMissing(ticketDir, strict: true);
+      // The refresh touches ocean repos only: what breaks stays the same.
+      missing = await _findMissing(
+        ticketDir,
+        strict: true,
+        breaking: missing.breaking,
+      );
     }
 
     final status = TicketRefsStatus(
       missingRepos: missing.between,
+      breakingRepos: missing.breaking,
       missingFromOcean: missing.fromOcean.missing,
       oceanReport: missing.fromOcean,
       graphError: missing.graphError,
@@ -519,79 +563,6 @@ class TicketLocalizer {
   }
 
   // ...........................................................................
-  /// The ocean repos between the repos of [ticketPath] in the ticket-shadowed
-  /// graph; none and the `error` when the ocean graph is broken.
-  Future<({List<String> names, String? error})> _missingRepos({
-    required String ticketPath,
-    required String oceanPath,
-  }) async {
-    final Map<String, Node> roots;
-    try {
-      roots = await _graph.get(
-        directory: Directory(oceanPath),
-        ggLog: _quiet,
-        packageDirs: graphPackageDirs(
-          oceanPath: oceanPath,
-          ticketPath: ticketPath,
-        ).dirs,
-      );
-    } catch (e) {
-      // A cycle among unrelated ocean repos must not block the ticket.
-      return (names: const <String>[], error: plainError(e));
-    }
-
-    bool inTicket(Node node) => path.isWithin(ticketPath, node.directory.path);
-    final nodes = <Node>{};
-    final dependents = <Node, List<Node>>{};
-    void collect(Node node) {
-      if (!nodes.add(node)) {
-        return;
-      }
-      for (final dep in _regularDependencies(node)) {
-        (dependents[dep] ??= <Node>[]).add(node);
-      }
-      node.dependencies.values.forEach(collect);
-    }
-
-    roots.values.forEach(collect);
-    final ticketNodes = nodes.where(inTicket).toList();
-    final below = _reachable(ticketNodes, _regularDependencies);
-    final above = _reachable(ticketNodes, (n) => dependents[n] ?? const []);
-    return (
-      names: [
-        for (final node in below.intersection(above))
-          if (!inTicket(node)) path.basename(node.directory.path),
-      ]..sort(),
-      error: null,
-    );
-  }
-
-  // ...........................................................................
-  /// The dependencies of [node] pub resolves for a dependent: no dev ones.
-  static Iterable<Node> _regularDependencies(Node node) => [
-    for (final MapEntry(:key, :value) in node.dependencies.entries)
-      if (!node.devOnlyDependencies.contains(key)) value,
-  ];
-
-  // ...........................................................................
-  /// The nodes reachable from [starts] along [next], the starts included.
-  static Set<Node> _reachable(
-    List<Node> starts,
-    Iterable<Node> Function(Node) next,
-  ) {
-    final seen = <Node>{...starts};
-    final queue = <Node>[...starts];
-    while (queue.isNotEmpty) {
-      for (final node in next(queue.removeLast())) {
-        if (seen.add(node)) {
-          queue.add(node);
-        }
-      }
-    }
-    return seen;
-  }
-
-  // ...........................................................................
   /// Reports the missing repos of [status] and what makes the check
   /// incomplete, each with its probable cause and the command fixing it.
   /// Advisory: the ocean is not refreshed and can be stale.
@@ -617,7 +588,10 @@ class TicketLocalizer {
           path.dirname(_oceanPathOf(ticketDir)),
         ),
       if (status.missingRepos.isNotEmpty)
-        ...missingBetweenReport(status.missingRepos),
+        ...missingBetweenReport(
+          status.missingRepos,
+          breaking: status.breakingRepos,
+        ),
       if (status.staleOceanError != null)
         ...staleOceanReport(status.staleOceanError!),
     ];

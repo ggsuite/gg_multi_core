@@ -1295,6 +1295,53 @@ void main() {
   });
 
   // ###########################################################################
+  group('breaking', () {
+    /// Plans A with [increment] recorded on top of the registry [baseline].
+    Future<PublishPlan> planA(
+      VersionIncrement increment, {
+      String baseline = '1.2.3',
+      Set<String> skipped = const <String>{},
+      bool mergeOnly = false,
+    }) async {
+      await gg.RepoPublishConfig(
+        versionIncrement: increment,
+        mergeMessage: 'Change A',
+      ).save(file: gg.repoPublishConfigFile(repoDir('A')));
+      return makePlanner(baseline: baseline, skipped: skipped).plan(
+        ticketDir: ticketDir,
+        subs: [node('A')],
+        ggLog: ggLog,
+        mergeOnly: mergeOnly,
+      );
+    }
+
+    test('marks a release that leaves the caret range', () async {
+      final plan = await planA(VersionIncrement.major);
+      expect(plan.entryFor('A')!.breaking, isTrue);
+      expect(plan.breaking, {'A'});
+    });
+
+    test('marks a minor release below 1.0.0', () async {
+      final plan = await planA(VersionIncrement.minor, baseline: '0.4.1');
+      expect(plan.breaking, {'A'});
+    });
+
+    test('does not mark a minor release from 1.0.0 on', () async {
+      final plan = await planA(VersionIncrement.minor);
+      expect(plan.entryFor('A')!.breaking, isFalse);
+      expect(plan.breaking, isEmpty);
+    });
+
+    test('does not mark a repo that is not released', () async {
+      final skipped = await planA(VersionIncrement.major, skipped: {'A'});
+      expect(skipped.breaking, isEmpty);
+
+      final merged = await planA(VersionIncrement.major, mergeOnly: true);
+      expect(merged.breaking, isEmpty);
+    });
+  });
+
+  // ###########################################################################
   group('PublishPlanWording', () {
     test('carries one wording per flow', () {
       expect(PublishPlanWording.publish.done, 'published');

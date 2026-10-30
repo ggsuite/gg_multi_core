@@ -6,9 +6,11 @@
 
 library;
 
+export 'src/backend/breaking_release.dart';
 export 'src/backend/constants.dart';
 export 'src/backend/duplicate_repo_cleanup.dart';
 export 'src/backend/filesystem_utils.dart';
+export 'src/backend/gg_rc.dart';
 export 'src/backend/git_platform.dart';
 export 'src/backend/graph_package_dirs.dart';
 export 'src/backend/message_editor_theme.dart';
@@ -25,6 +27,7 @@ export 'src/backend/repo_dependencies.dart';
 export 'src/backend/repo_folder_resolver.dart';
 export 'src/backend/repo_freshness.dart';
 export 'src/backend/repo_identity.dart';
+export 'src/backend/repos_between.dart';
 export 'src/backend/repository.dart';
 export 'src/backend/ticket_cleanup.dart';
 export 'src/backend/ticket_json.dart';
