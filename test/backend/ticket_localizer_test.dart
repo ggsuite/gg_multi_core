@@ -176,21 +176,47 @@ void main() {
           .writeSuccess(directory: dir, key: gg.GgState.doCommitKey);
 
   // ...........................................................................
+  /// The `publish_config.json` of a repo recording [increment], as
+  /// `gg do review` answers it.
+  Map<String, String> recorded(String increment) => {
+    '.gg/publish_config.json':
+        '{"publishConfig": {"versionIncrement": "$increment"}}',
+  };
+
+  /// The `publish_config.json` of a repo whose release breaks.
+  final breakingRelease = recorded('major');
+
+  // ...........................................................................
   /// A ticket {a, b, d}: a depends on b (not localized) and on the ocean's c,
-  /// which depends on d — so c is missing between a and d.
-  Future<Directory> ticketMissingC() async {
+  /// which depends on d — so c is missing between a and d, whose release
+  /// with [increment] breaks.
+  Future<Directory> ticketMissingC({String? increment = 'major'}) async {
     final a = await repo('a', {
       'pubspec.yaml': pubspec('a', ['b', 'c']),
     });
     await repo('b', {'pubspec.yaml': pubspec('b')});
-    await repo('d', {'pubspec.yaml': pubspec('d')});
+    await repo('d', {
+      'pubspec.yaml': pubspec('d'),
+      if (increment != null) ...recorded(increment),
+    });
     oceanRepo('c', ['d']);
     return a;
   }
 
-  /// The warning about [names] missing in the ticket, as logged.
+  /// A second chain a2 -> c2 (ocean) -> d2, nothing recorded for d2.
+  Future<void> ticketMissingC2() async {
+    await repo('a2', {
+      'pubspec.yaml': pubspec('a2', ['c2']),
+    });
+    await repo('d2', {'pubspec.yaml': pubspec('d2')});
+    oceanRepo('c2', ['d2']);
+  }
+
+  /// The warning about [names] missing in the ticket below the release of d,
+  /// as logged.
   List<String> missingWarning(List<String> names) => [
-    for (final line in missingBetweenReport(names)) rmControls(line),
+    for (final line in missingBetweenReport(names, breaking: ['d']))
+      rmControls(line),
   ];
 
   setUp(() {
@@ -275,6 +301,20 @@ void main() {
         );
 
         expect(result.missingRepos, ['c']);
+        expect(result.breakingRepos, {'d'});
+      });
+
+      test('reports no repo between when no release breaks', () async {
+        // c keeps its ^1.0.0 constraint: a minor release of d fits it.
+        await ticketMissingC(increment: 'minor');
+
+        final result = await localizer.check(
+          ticketDir: ticket,
+          repos: await nodes(),
+        );
+
+        expect(result.missingRepos, isEmpty);
+        expect(result.breakingRepos, isEmpty);
       });
 
       test('follows no dev dependency edge', () async {
@@ -283,7 +323,7 @@ void main() {
         await repo('a', {
           'pubspec.yaml': pubspec('a', [], ['c']),
         });
-        await repo('d', {'pubspec.yaml': pubspec('d')});
+        await repo('d', {'pubspec.yaml': pubspec('d'), ...breakingRelease});
         oceanRepo('c', ['d']);
         await repo('f', {
           'pubspec.yaml': pubspec('f', ['g']),
@@ -307,8 +347,9 @@ void main() {
         });
         await repo('d', {
           'pubspec.yaml': pubspec('d', ['e']),
+          ...breakingRelease,
         });
-        await repo('f', {'pubspec.yaml': pubspec('f')});
+        await repo('f', {'pubspec.yaml': pubspec('f'), ...breakingRelease});
         oceanRepo('c', ['d']);
         oceanRepo('b', ['d']);
         oceanRepo('e', ['f']);
@@ -568,9 +609,54 @@ void main() {
             messages,
             containsAllInOrder([
               'Run gg do add x in ${tmp.path} to clone them into the ocean.\n',
-              'Run gg do add c to add them.\n',
+              'Run gg do add transitive for d to add them.\n',
             ]),
           );
+        });
+
+        test('asks about the releases it is given instead of the recorded '
+            'ones', () async {
+          orgOffers(const []);
+          // d recorded a major release, but the caller knows better.
+          await ticketMissingC();
+          messages.clear();
+
+          await localizer.throwWhenReposMissing(
+            ticketDir: ticket,
+            ggLog: ggLog,
+            breaking: const <String>{},
+          );
+          expect(messages, isEmpty);
+
+          await ticketMissingC2();
+          await expectLater(
+            localizer.throwWhenReposMissing(
+              ticketDir: ticket,
+              ggLog: ggLog,
+              breaking: {'d2'},
+            ),
+            throwsA(
+              isA<Exception>().having(
+                (e) => rmControls('$e'),
+                'message',
+                contains('The ticket lacks c2.'),
+              ),
+            ),
+          );
+        });
+
+        test('passes a repo between when the release below it does not '
+            'break', () async {
+          orgOffers(const []);
+          await ticketMissingC(increment: null);
+          messages.clear();
+
+          await localizer.throwWhenReposMissing(
+            ticketDir: ticket,
+            ggLog: ggLog,
+          );
+
+          expect(messages, isEmpty);
         });
 
         test('fails when the search fails', () async {
@@ -591,7 +677,8 @@ void main() {
 
         test('warns when the ocean graph does not build', () async {
           orgOffers(const []);
-          await repo('a', {'pubspec.yaml': pubspec('a')});
+          // Only a breaking release makes the graph worth building.
+          await repo('a', {'pubspec.yaml': pubspec('a'), ...breakingRelease});
           oceanRepo('x', ['y']);
           oceanRepo('y', ['x']);
           messages.clear();

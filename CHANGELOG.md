@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.15.0 - 2026-10-30
+
+### Added
+
+- Add the ~/.gg_rc user settings and demand the repos between the ticket repos only above a breaking release
+
 ## 4.14.1 - 2026-10-30
 
 ### Changed

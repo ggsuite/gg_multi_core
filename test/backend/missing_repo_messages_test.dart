@@ -126,12 +126,13 @@ void main() {
     );
   });
 
-  test('missingBetweenReport explains the old constraints', () {
-    final text = plain(missingBetweenReport(['c', 'd']));
+  test('missingBetweenReport names the breaking releases and the command', () {
+    final text = plain(missingBetweenReport(['c', 'd'], breaking: ['f', 'e']));
 
     expect(text, contains('  - c\n  - d'));
-    expect(text, contains('keep their old version constraints'));
-    expect(text, contains('Run gg do add c d to add them.'));
+    expect(text, contains('They depend on e f, whose next release breaks'));
+    expect(text, contains('two incompatible ones'));
+    expect(text, contains('Run gg do add transitive for e f to add them.'));
   });
 
   test('brokenGraphReport points at the graph', () {

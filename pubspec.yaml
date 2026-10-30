@@ -1,6 +1,6 @@
 name: gg_multi_core
 description: "Workspace model of the gg_multi tool family - the ocean/tickets/trash layout, organization folders, url parsing, git platforms, ticket metadata and state."
-version: 4.14.1
+version: 4.15.0
 repository: https://github.com/ggsuite/gg_multi_core.git
 
 environment:
@@ -9,7 +9,7 @@ environment:
 dependencies:
   gg_args: ^3.2.0
   gg_console_colors: ^2.5.0
-  gg_git: ^4.5.5
+  gg_git: ^4.7.0
   gg_lang: ^0.8.3
   gg_local_package_dependencies: ^4.2.3
   gg_localize_refs: ^5.2.0

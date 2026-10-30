@@ -17,6 +17,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:path/path.dart' as path;
 import 'package:pub_semver/pub_semver.dart';
 
+import 'package:gg_multi_core/src/backend/breaking_release.dart';
 import 'package:gg_multi_core/src/backend/message_editor_theme.dart';
 import 'package:gg_multi_core/src/backend/publish_config_io.dart';
 import 'package:gg_multi_core/src/backend/publish_skip_check.dart';
@@ -143,6 +144,7 @@ class PublishPlanEntry {
     this.versionIncrement,
     this.mergeMessage,
     this.pullRequestBody,
+    this.breaking = false,
   });
 
   /// The repository's folder name — the key of its `.gg-publish.json` entry.
@@ -170,6 +172,10 @@ class PublishPlanEntry {
   /// The description of the repository's pull request — the commits recorded
   /// in its `publish_config.json`, or null when it recorded none.
   final String? pullRequestBody;
+
+  /// Whether its release breaks its dependents: the chosen increment leaves
+  /// the caret range of the version it replaces ([releaseBreaks]).
+  final bool breaking;
 }
 
 // .............................................................................
@@ -225,6 +231,12 @@ class PublishPlan {
 
   /// Whether any repository needs a release at all.
   bool get anyPublishes => entries.any((entry) => entry.publishes);
+
+  /// The names of the repositories whose release breaks its dependents.
+  Set<String> get breaking => <String>{
+    for (final entry in entries)
+      if (entry.breaking) entry.name,
+  };
 
   /// The entry of [name], or null when the ticket has no such repository.
   PublishPlanEntry? entryFor(String name) {
@@ -489,19 +501,6 @@ class PublishPlanner {
         }
       }
 
-      pass.entries.add(
-        PublishPlanEntry(
-          name: repoName,
-          directory: repoDir,
-          publishes: doesPublish,
-          reason: reason,
-          alreadyPublished: alreadyPublished,
-          versionIncrement: repoConfig.versionIncrement?.name,
-          mergeMessage: repoConfig.mergeMessage,
-          pullRequestBody: repoConfig.pullRequestBody,
-        ),
-      );
-
       // Predict what later repos will resolve against. A repository about to
       // be asked is predicted with the increment its question starts with, so
       // its dependents are judged as they will most likely be — not as if
@@ -515,6 +514,29 @@ class PublishPlanner {
             repoConfig.versionIncrement ??
             (pass.toAsk.contains(repo) ? VersionIncrement.patch : null),
         channel: files.state.channel,
+      );
+
+      pass.entries.add(
+        PublishPlanEntry(
+          name: repoName,
+          directory: repoDir,
+          publishes: doesPublish,
+          reason: reason,
+          alreadyPublished: alreadyPublished,
+          versionIncrement: repoConfig.versionIncrement?.name,
+          mergeMessage: repoConfig.mergeMessage,
+          pullRequestBody: repoConfig.pullRequestBody,
+          // A merge releases nothing; an open question breaks nothing yet.
+          breaking:
+              doesPublish &&
+              !run.mergeOnly &&
+              releaseBreaks(
+                repoConfig.versionIncrement,
+                // Looked up by the prediction above, or before it.
+                base: run.baselines[repoName],
+                repoDir: repoDir,
+              ),
+        ),
       );
 
       for (final name in (await publishedNames(repoDir, repoName)).values) {
@@ -858,9 +880,12 @@ class PublishPlanner {
     }
 
     try {
-      final base = run.baselines.containsKey(repoName)
-          ? run.baselines[repoName]
-          : await _publishedVersion.get(directory: repoDir, ggLog: (_) {});
+      // Kept for [PublishPlanEntry.breaking], which needs the same base.
+      if (!run.baselines.containsKey(repoName)) {
+        final get = _publishedVersion.get;
+        run.baselines[repoName] = await get(directory: repoDir, ggLog: (_) {});
+      }
+      final base = run.baselines[repoName];
       if (base == null) {
         return null;
       }
