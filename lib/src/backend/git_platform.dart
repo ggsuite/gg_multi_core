@@ -14,6 +14,12 @@ import 'package:http/http.dart' as http;
 import 'package:gg_multi_core/src/backend/repository.dart';
 import 'package:gg_git/gg_git.dart';
 
+/// Forces the `az` CLI to write UTF-8 to its redirected stdout/stderr.
+/// Without it, `az` falls back to the system codepage (e.g. Windows-1252)
+/// once it is not attached to a console, garbling names like "Käßbohrer"
+/// that gg then fails to decode as UTF-8.
+const Map<String, String> _azCliEnvironment = {'PYTHONIOENCODING': 'utf-8'};
+
 /// Interface for Git platforms like GitHub, Azure DevOps, GitLab.
 abstract class GitPlatform {
   /// Builds the full clone URL for a repository.
@@ -167,7 +173,7 @@ class AzureDevOpsPlatform implements GitPlatform {
       'https://dev.azure.com/$org',
       '--project',
       project,
-    ]);
+    ], environment: _azCliEnvironment);
     if (result.exitCode != 0) {
       throw Exception(
         cError(
@@ -199,7 +205,9 @@ class AzureDevOpsPlatform implements GitPlatform {
   /// Throws an exception with installation instructions if not installed.
   Future<void> _checkAzInstalled() async {
     try {
-      final result = await _processRunner('az', ['--version']);
+      final result = await _processRunner('az', [
+        '--version',
+      ], environment: _azCliEnvironment);
       if (result.exitCode != 0) {
         throw Exception(cError(result.stderr.toString()));
       }

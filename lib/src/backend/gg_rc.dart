@@ -46,6 +46,7 @@ class GgRc {
   static const Map<String, dynamic> builtInDefaults = <String, dynamic>{
     'do': <String, dynamic>{
       'add': <String, dynamic>{'transitive': true},
+      'publish': <String, dynamic>{'askTicketCleanup': false},
     },
   };
 
