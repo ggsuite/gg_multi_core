@@ -435,5 +435,52 @@ void main() {
       expect(ticketDir.existsSync(), isTrue);
       expect(log, isNot(contains('Change to the workspace root')));
     });
+
+    group('when the ticket folder is in use', () {
+      // Windows refuses to rename or delete a folder a terminal sits in.
+      // That cannot be provoked portably, so the move throws what Windows
+      // reports then.
+      Never inUse({required Directory ticketDir}) => throw FileSystemException(
+        'Deletion failed',
+        ticketDir.path,
+        const OSError('used by another process', 32),
+      );
+
+      Future<String> cleanUp() async {
+        await cleanUpTicket(
+          ticketDir: ticketDir,
+          repoDirs: const [],
+          deleteRemoteBranch: false,
+          ggLog: messages.add,
+          taskLog: taskMessages.add,
+          processRunner: okRunner,
+          moveToTrash: inUse,
+        );
+        return messages.join('\n');
+      }
+
+      test('tells to delete the empty folder the copy left behind', () async {
+        final log = await cleanUp();
+
+        expect(log, contains('Failed to move ticket T1 to the trash'));
+        expect(log, contains('The ticket is in the trash already'));
+        expect(messages, contains(cCmd('  cd ${root.absolute.path}')));
+        expect(
+          messages,
+          contains(cCmd('  rmdir ${path.join('tickets', 'T1')}')),
+        );
+        expect(log, isNot(contains('Change to the workspace root')));
+      });
+
+      test('tells to retry when the ticket is still in place', () async {
+        repo('ggsuite', 'a');
+
+        final log = await cleanUp();
+
+        expect(log, contains('still sits in the ticket folder'));
+        expect(messages, contains(cCmd('  cd ${root.absolute.path}')));
+        expect(messages, contains(cCmd('  gg do rm ticket T1')));
+      });
+    });
   });
 }

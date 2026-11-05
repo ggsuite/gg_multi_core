@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Explain how to finish a ticket cleanup when another process still uses the ticket folder
+
 ## 4.15.0 - 2026-10-30
 
 ### Added
