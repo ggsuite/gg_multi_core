@@ -145,4 +145,109 @@ void main() {
       expect(messages, isEmpty);
     });
   });
+
+  group('repoDependenciesOutdated', () {
+    /// Writes [content] to [file] below the repo [dir].
+    void write(Directory dir, String file, String content) =>
+        File(path.join(dir.path, file))
+          ..createSync(recursive: true)
+          ..writeAsStringSync(content);
+
+    /// A `package_config.json` resolving each of [rootUris] by package.
+    String packageConfig(Map<String, String> rootUris) =>
+        '{"configVersion": 2, "packages": ['
+        '${rootUris.entries.map((e) => '{"name": "${e.key}", '
+            '"rootUri": "${e.value}"}').join(', ')}]}';
+
+    const overrides =
+        'dependency_overrides:\n'
+        '  sib:\n'
+        '    path: ../sib\n'
+        '  pinned: 1.0.0\n';
+
+    test('is false for a repo without manifests', () {
+      expect(repoDependenciesOutdated(repoWith()), isFalse);
+    });
+
+    test('is true for a Dart repo pub never resolved', () {
+      expect(repoDependenciesOutdated(repoWith(pubspec: true)), isTrue);
+    });
+
+    test('is false for a resolved Dart repo without overrides', () {
+      final dir = repoWith(pubspec: true);
+      write(dir, '.dart_tool/package_config.json', packageConfig({}));
+
+      expect(repoDependenciesOutdated(dir), isFalse);
+    });
+
+    test('is false when the resolution uses every path override', () {
+      final dir = repoWith(pubspec: true);
+      write(dir, 'pubspec_overrides.yaml', overrides);
+      write(
+        dir,
+        '.dart_tool/package_config.json',
+        packageConfig({'sib': '../../sib', 'x': '../'}),
+      );
+
+      expect(repoDependenciesOutdated(dir), isFalse);
+    });
+
+    test('accepts an absolute rootUri', () {
+      final dir = repoWith(pubspec: true);
+      write(dir, 'pubspec_overrides.yaml', overrides);
+      final sib = Uri.directory(path.join(tmp.path, 'sib'));
+      write(
+        dir,
+        '.dart_tool/package_config.json',
+        packageConfig({'sib': '$sib'}),
+      );
+
+      expect(repoDependenciesOutdated(dir), isFalse);
+    });
+
+    test('is true when the resolution ignores a path override', () {
+      final dir = repoWith(pubspec: true);
+      write(dir, 'pubspec_overrides.yaml', overrides);
+      write(
+        dir,
+        '.dart_tool/package_config.json',
+        packageConfig({'sib': 'file:///pub-cache/hosted/sib-1.0.0/'}),
+      );
+
+      expect(repoDependenciesOutdated(dir), isTrue);
+    });
+
+    test('is true when the resolution lacks an overridden package', () {
+      final dir = repoWith(pubspec: true);
+      write(dir, 'pubspec_overrides.yaml', overrides);
+      write(dir, '.dart_tool/package_config.json', packageConfig({}));
+
+      expect(repoDependenciesOutdated(dir), isTrue);
+    });
+
+    test('is true for an unreadable package_config.json', () {
+      final dir = repoWith(pubspec: true);
+      write(dir, '.dart_tool/package_config.json', 'not json');
+
+      expect(repoDependenciesOutdated(dir), isTrue);
+    });
+
+    test('is true for a TypeScript repo without node_modules', () {
+      expect(repoDependenciesOutdated(repoWith(packageJson: true)), isTrue);
+    });
+
+    test('is false for an installed TypeScript repo', () {
+      final dir = repoWith(packageJson: true);
+      Directory(path.join(dir.path, 'node_modules')).createSync();
+
+      expect(repoDependenciesOutdated(dir), isFalse);
+    });
+
+    test('is true for a bridge repo with only one side installed', () {
+      final dir = repoWith(pubspec: true, packageJson: true);
+      write(dir, '.dart_tool/package_config.json', packageConfig({}));
+
+      expect(repoDependenciesOutdated(dir), isTrue);
+    });
+  });
 }
