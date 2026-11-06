@@ -296,7 +296,7 @@ packages:
       path: "../gg_git"
       relative: true
     source: path
-    version: "4.8.0"
+    version: "4.8.1"
   gg_hash:
     dependency: transitive
     description:
@@ -311,7 +311,7 @@ packages:
       path: "../gg_interact"
       relative: true
     source: path
-    version: "0.1.0"
+    version: "0.1.1"
   gg_is_flutter:
     dependency: "direct overridden"
     description:
@@ -390,7 +390,7 @@ packages:
       path: "../gg_one_core"
       relative: true
     source: path
-    version: "2.16.0"
+    version: "2.16.1"
   gg_one_do_publish:
     dependency: "direct overridden"
     description:
@@ -425,28 +425,28 @@ packages:
       path: "../gg_publish"
       relative: true
     source: path
-    version: "4.10.2"
+    version: "4.10.3"
   gg_status_printer:
     dependency: "direct dev"
     description:
       path: "../gg_status_printer"
       relative: true
     source: path
-    version: "1.6.3"
+    version: "1.6.4"
   gg_test:
     dependency: "direct overridden"
     description:
       path: "../gg_test"
       relative: true
     source: path
-    version: "3.3.4"
+    version: "3.3.5"
   gg_version:
     dependency: "direct overridden"
     description:
       path: "../gg_version"
       relative: true
     source: path
-    version: "5.7.2"
+    version: "5.7.3"
   glob:
     dependency: transitive
     description:
