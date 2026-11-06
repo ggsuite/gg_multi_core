@@ -123,6 +123,18 @@ class TicketLocalizer {
   }) => _check(ticketDir: ticketDir, repos: repos, findMissing: true);
 
   // ...........................................................................
+  /// The [repos] whose references are out of sync, in the given order — the
+  /// ones [localizeUnlocalized] localizes. Read-only and offline: unlike
+  /// [check] it does not search for missing repos.
+  Future<List<Node>> outOfSync(List<Node> repos) async {
+    final unlocalized = await _unlocalizedRefs(repos);
+    return <Node>[
+      for (final repo in repos)
+        if (unlocalized.containsKey(repo.directory.path)) repo,
+    ];
+  }
+
+  // ...........................................................................
   /// Warns about missing repos and throws, listing the unlocalized refs with
   /// the command that fixes them, when [repos] are out of sync. Read-only.
   Future<void> throwWhenOutOfSync({
@@ -168,11 +180,12 @@ class TicketLocalizer {
 
   // ...........................................................................
   /// Localizes the references of [repos] (in the given order) and resolves
-  /// their dependencies again; [upgrade] runs `pub upgrade`.
+  /// their dependencies again with `pub get`, which keeps the locked
+  /// versions; [upgrade] runs `pub upgrade` instead.
   Future<void> localize({
     required List<Node> repos,
     required GgLog ggLog,
-    bool upgrade = false,
+    @Deprecated(_upgradeDeprecation) bool upgrade = false,
   }) => _localize(
     repos: repos,
     ggLog: ggLog,
@@ -235,7 +248,7 @@ class TicketLocalizer {
     required GgLog ggLog,
     GgLog? installErrorLog,
     Set<String> recordStateFor = const <String>{},
-    bool upgrade = false,
+    @Deprecated(_upgradeDeprecation) bool upgrade = false,
   }) async {
     Future<void> commitAllBut(String? failedRepo) => commit(
       repoDirs: [
@@ -329,6 +342,13 @@ class TicketLocalizer {
   final RepoFreshness _repoFreshness;
   final GitStatus _gitStatus;
 
+  /// Why localizing must not upgrade: `pub upgrade` asks the remote of every
+  /// git dependency for new versions — one connection each, per repo — while
+  /// `pub get` resolves the changed overrides from the lock file and the pub
+  /// cache. Upgrading is the job of `gg do push`.
+  static const String _upgradeDeprecation =
+      'Localizing resolves with pub get; gg do push upgrades.';
+
   /// Drops what the graphs note on the way; their errors are thrown.
   static void _quiet(String _) {}
 
@@ -348,16 +368,7 @@ class TicketLocalizer {
     required List<Node> repos,
     required bool findMissing,
   }) async {
-    final unlocalized = <String, List<UnlocalizedRef>>{};
-    for (final repo in repos) {
-      final refs = await _refsCheck.get(
-        directory: repo.directory,
-        ggLog: _quiet,
-      );
-      if (refs.isNotEmpty) {
-        unlocalized[repo.directory.path] = refs;
-      }
-    }
+    final unlocalized = await _unlocalizedRefs(repos);
     if (!findMissing) {
       return TicketRefsStatus(unlocalized: unlocalized);
     }
@@ -370,6 +381,25 @@ class TicketLocalizer {
       oceanReport: missing.fromOcean,
       graphError: missing.graphError,
     );
+  }
+
+  // ...........................................................................
+  /// The unlocalized refs of [repos], keyed by `Directory.path`; only repos
+  /// with something to fix.
+  Future<Map<String, List<UnlocalizedRef>>> _unlocalizedRefs(
+    List<Node> repos,
+  ) async {
+    final unlocalized = <String, List<UnlocalizedRef>>{};
+    for (final repo in repos) {
+      final refs = await _refsCheck.get(
+        directory: repo.directory,
+        ggLog: _quiet,
+      );
+      if (refs.isNotEmpty) {
+        unlocalized[repo.directory.path] = refs;
+      }
+    }
+    return unlocalized;
   }
 
   // ...........................................................................

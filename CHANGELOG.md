@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Add TicketLocalizer.outOfSync and deprecate the upgrade option of localize: localizing resolves with pub get
+
 ## 4.15.0 - 2026-10-30
 
 ### Added
