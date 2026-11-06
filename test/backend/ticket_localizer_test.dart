@@ -901,6 +901,7 @@ void main() {
         await localizer.localize(
           repos: await nodes(),
           ggLog: ggLog,
+          // ignore: deprecated_member_use_from_same_package
           upgrade: true,
         );
 
@@ -1227,6 +1228,45 @@ void main() {
 
         expect(messages, contains(startsWith('Failed to commit b: ')));
         expect(await status(b), contains('pubspec_overrides.yaml'));
+      });
+    });
+
+    // .........................................................................
+    group('outOfSync', () {
+      test('lists the repos to localize in the given order, offline and '
+          'without touching them', () async {
+        final a = await repo('a', {
+          'pubspec.yaml': pubspec('a', ['c']),
+        });
+        final b = await repo('b', {'pubspec.yaml': pubspec('b')});
+        final c = await repo('c', {
+          'pubspec.yaml': pubspec('c', ['b']),
+        });
+        final heads = [
+          for (final dir in [a, b, c]) await git(dir, ['rev-parse', 'HEAD']),
+        ];
+        messages.clear();
+
+        final repos = await nodes();
+        final outOfSync = await localizer.outOfSync(repos);
+
+        expect(outOfSync.map((n) => path.basename(n.directory.path)), [
+          for (final n in repos)
+            if (const {'a', 'c'}.contains(path.basename(n.directory.path)))
+              path.basename(n.directory.path),
+        ]);
+        expect(outOfSync.every(repos.contains), isTrue);
+        expect(installs, isEmpty);
+        expect(messages, isEmpty);
+        expect([
+          for (final dir in [a, b, c]) await git(dir, ['rev-parse', 'HEAD']),
+        ], heads);
+      });
+
+      test('is empty for a ticket in sync', () async {
+        await repo('a', {'pubspec.yaml': pubspec('a')});
+
+        expect(await localizer.outOfSync(await nodes()), isEmpty);
       });
     });
 

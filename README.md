@@ -41,7 +41,11 @@ the foundation the other members of the family (`gg_multi_workspace`,
   the ticket; `localizeUnlocalized` fixes the refs, installs the
   dependencies again (`installRepoDependencies`, Flutter aware) and
   records only gg's own changes as `#gg:` commits — the user's work,
-  including a hand-edited manifest, stays uncommitted. A missing repo
+  including a hand-edited manifest, stays uncommitted. `outOfSync`
+  names the repos with unlocalized refs and `repoDependenciesOutdated`
+  the ones whose dependencies were never installed or whose resolution
+  ignores a path override, so a caller resolves only those. Localizing
+  resolves with `pub get`, never `pub upgrade`. A missing repo
   never blocks (the ocean can be stale): it is a warning with the hint
   `gg do add <repo>`. Only the publish gate (`throwWhenReposMissing`)
   stops on it. `graphPackageDirs` lists the folders of the
