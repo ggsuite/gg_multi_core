@@ -225,7 +225,9 @@ void main() {
 
     test('fetchOrgRepos executes CLI and parses JSON', () async {
       final mockRunner = MockProcessRunner();
-      when(() => mockRunner('az', any())).thenAnswer(
+      when(
+        () => mockRunner('az', any(), environment: any(named: 'environment')),
+      ).thenAnswer(
         (_) async => ProcessResult(
           1,
           0,
@@ -249,14 +251,15 @@ void main() {
           'https://dev.azure.com/myorg',
           '--project',
           'myproj',
-        ]),
+        ], environment: any(named: 'environment')),
       ).called(1);
     });
 
     test('fetchOrgRepos throws on non-zero exit code', () async {
       final mockRunner = MockProcessRunner();
-      when(() => mockRunner('az', any()))
-          .thenAnswer((_) async => ProcessResult(2, 1, '', 'CLI error'));
+      when(
+        () => mockRunner('az', any(), environment: any(named: 'environment')),
+      ).thenAnswer((_) async => ProcessResult(2, 1, '', 'CLI error'));
       final platform = AzureDevOpsPlatform(processRunner: mockRunner.call);
       await expectLater(
         platform.fetchOrgRepos('myorg', project: 'myproj'),
@@ -266,8 +269,9 @@ void main() {
 
     test('fetchOrgRepos throws on invalid JSON', () async {
       final mockRunner = MockProcessRunner();
-      when(() => mockRunner('az', any()))
-          .thenAnswer((_) async => ProcessResult(3, 0, 'invalid json', ''));
+      when(
+        () => mockRunner('az', any(), environment: any(named: 'environment')),
+      ).thenAnswer((_) async => ProcessResult(3, 0, 'invalid json', ''));
       final platform = AzureDevOpsPlatform(processRunner: mockRunner.call);
       await expectLater(
         platform.fetchOrgRepos('myorg', project: 'myproj'),
@@ -278,8 +282,11 @@ void main() {
     test('fetchOrgRepos throws when az is not installed', () async {
       final mockRunner = MockProcessRunner();
       // First call: az --version fails
-      when(() => mockRunner('az', ['--version']))
-          .thenAnswer((_) async => ProcessResult(4, 1, '', 'az not found'));
+      when(
+        () => mockRunner('az', [
+          '--version',
+        ], environment: any(named: 'environment')),
+      ).thenAnswer((_) async => ProcessResult(4, 1, '', 'az not found'));
       final platform = AzureDevOpsPlatform(processRunner: mockRunner.call);
       await expectLater(
         platform.fetchOrgRepos('myorg', project: 'myproj'),
@@ -292,7 +299,13 @@ void main() {
         ),
       );
       // Main az repos list should not be called
-      verifyNever(() => mockRunner('az', any(that: contains('repos'))));
+      verifyNever(
+        () => mockRunner(
+          'az',
+          any(that: contains('repos')),
+          environment: any(named: 'environment'),
+        ),
+      );
     });
 
     test('extractOrgFromUrl returns Organization for Azure URL', () {
@@ -330,10 +343,12 @@ void main() {
       () async {
         final mockRunner = MockProcessRunner();
         when(
-          () => mockRunner('az', any()),
+          () => mockRunner('az', any(), environment: any(named: 'environment')),
         ).thenAnswer((_) async => ProcessResult(3, 1, '', 'CLI error message'));
         when(
-          () => mockRunner('az', ['--version']),
+          () => mockRunner('az', [
+            '--version',
+          ], environment: any(named: 'environment')),
         ).thenAnswer((_) async => ProcessResult(2, 0, '', 'azure-cli 2.75.0'));
         final platform = AzureDevOpsPlatform(processRunner: mockRunner.call);
         await expectLater(
