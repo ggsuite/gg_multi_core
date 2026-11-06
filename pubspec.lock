@@ -165,14 +165,14 @@ packages:
       path: "../dna_gg"
       relative: true
     source: path
-    version: "1.4.0"
+    version: "1.5.0"
   dna_ggsuite:
     dependency: "direct dev"
     description:
       path: "../dna_ggsuite"
       relative: true
     source: path
-    version: "1.0.0"
+    version: "1.0.1"
   dna_github:
     dependency: "direct overridden"
     description:
@@ -221,7 +221,7 @@ packages:
       path: "../dna_translate"
       relative: true
     source: path
-    version: "0.3.0"
+    version: "0.4.0"
   dna_vscode:
     dependency: "direct overridden"
     description:
@@ -289,7 +289,7 @@ packages:
       path: "../gg_direct_json"
       relative: true
     source: path
-    version: "2.2.3"
+    version: "2.2.4"
   gg_git:
     dependency: "direct main"
     description:
@@ -318,14 +318,14 @@ packages:
       path: "../gg_is_flutter"
       relative: true
     source: path
-    version: "2.2.3"
+    version: "2.2.4"
   gg_is_github:
     dependency: "direct overridden"
     description:
       path: "../gg_is_github"
       relative: true
     source: path
-    version: "1.2.3"
+    version: "1.2.4"
   gg_json:
     dependency: transitive
     description:
@@ -340,7 +340,7 @@ packages:
       path: "../gg_lang"
       relative: true
     source: path
-    version: "0.8.3"
+    version: "0.8.4"
   gg_local_package_dependencies:
     dependency: "direct main"
     description:
@@ -354,7 +354,7 @@ packages:
       path: "../gg_localize_refs"
       relative: true
     source: path
-    version: "5.2.0"
+    version: "5.2.1"
   gg_log:
     dependency: "direct main"
     description:
@@ -369,7 +369,7 @@ packages:
       path: "../gg_merge"
       relative: true
     source: path
-    version: "3.8.4"
+    version: "3.8.5"
   gg_one:
     dependency: "direct main"
     description:
@@ -418,7 +418,7 @@ packages:
       path: "../gg_project_root"
       relative: true
     source: path
-    version: "2.2.3"
+    version: "2.2.4"
   gg_publish:
     dependency: "direct main"
     description:
