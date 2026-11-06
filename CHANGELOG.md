@@ -1,11 +1,12 @@
 # Changelog
 
-## Unreleased
+## 4.16.0 - 2026-11-06
 
 ### Added
 
 - Add TicketLocalizer.outOfSync and deprecate the upgrade option of localize: localizing resolves with pub get
 - Add repoDependenciesOutdated: tells a repo whose dependencies were never installed or whose resolution ignores its path overrides
+
 ## 4.15.1 - 2026-11-06
 
 ### Changed
