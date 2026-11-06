@@ -133,7 +133,7 @@
       "name": "gg-git",
       "package": "gg_git",
       "ecosystem": "pub",
-      "resolvedVersion": "4.8.0",
+      "resolvedVersion": "4.8.1",
       "via": null,
       "hash": "0x32b3537fa5495175"
     },
@@ -165,7 +165,7 @@
       "name": "gg-publish",
       "package": "gg_publish",
       "ecosystem": "pub",
-      "resolvedVersion": "4.10.2",
+      "resolvedVersion": "4.10.3",
       "via": "gg-one-core",
       "hash": "0x32b3537fa5495175"
     },
@@ -173,7 +173,7 @@
       "name": "gg-status-printer",
       "package": "gg_status_printer",
       "ecosystem": "pub",
-      "resolvedVersion": "1.6.3",
+      "resolvedVersion": "1.6.4",
       "via": "gg-one-core",
       "hash": "0x32b3537fa5495175"
     },
@@ -181,7 +181,7 @@
       "name": "gg-test",
       "package": "gg_test",
       "ecosystem": "pub",
-      "resolvedVersion": "3.3.4",
+      "resolvedVersion": "3.3.5",
       "via": "gg-one-core",
       "hash": "0x32b3537fa5495175"
     },
@@ -189,7 +189,7 @@
       "name": "gg-version",
       "package": "gg_version",
       "ecosystem": "pub",
-      "resolvedVersion": "5.7.2",
+      "resolvedVersion": "5.7.3",
       "via": "gg-one-core",
       "hash": "0x32b3537fa5495175"
     },
@@ -197,7 +197,7 @@
       "name": "gg-one-core",
       "package": "gg_one_core",
       "ecosystem": "pub",
-      "resolvedVersion": "2.16.0",
+      "resolvedVersion": "2.16.1",
       "via": "gg-one-commit",
       "hash": "0x32b3537fa5495175"
     },
