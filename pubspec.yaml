@@ -25,9 +25,9 @@ dependencies:
   yaml: ^3.1.4
 
 dev_dependencies:
-  dna_ggsuite: ^1.0.1
+  dna_ggsuite: ^1.0.2
   gg_capture_print: ^1.2.1
-  gg_process: ^1.4.0
+  gg_process: ^1.4.1
   gg_status_printer: ^1.6.4
   helix: ^1.14.0
   lints: ^6.1.0
