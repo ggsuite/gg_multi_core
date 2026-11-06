@@ -6,6 +6,15 @@
 
 - Add TicketLocalizer.outOfSync and deprecate the upgrade option of localize: localizing resolves with pub get
 - Add repoDependenciesOutdated: tells a repo whose dependencies were never installed or whose resolution ignores its path overrides
+## 4.15.1 - 2026-11-06
+
+### Changed
+
+- Tighten dependencies
+
+### Fixed
+
+- Fix az CLI UTF-8 encoding, auto-generate ticket id/title/description, add only-PM-repo option, skip ticket cleanup prompt by default, stop auto-opening PR URLs
 
 ## 4.15.0 - 2026-10-30
 

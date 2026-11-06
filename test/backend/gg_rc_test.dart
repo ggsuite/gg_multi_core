@@ -19,6 +19,7 @@ void main() {
   void ggLog(String m) => messages.add(rmControls(m));
 
   const transitive = <String>['do', 'add', 'transitive'];
+  const askTicketCleanup = <String>['do', 'publish', 'askTicketCleanup'];
 
   setUp(() {
     messages.clear();
@@ -69,6 +70,7 @@ void main() {
         expect(rc.file, file);
         expect(rc.values, isEmpty);
         expect(rc.flag(transitive), isTrue);
+        expect(rc.flag(askTicketCleanup), isFalse);
         expect(messages.single, startsWith('✓ Created ${file.path}'));
       });
 
