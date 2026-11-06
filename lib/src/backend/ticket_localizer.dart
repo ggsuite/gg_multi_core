@@ -126,13 +126,8 @@ class TicketLocalizer {
   /// The [repos] whose references are out of sync, in the given order — the
   /// ones [localizeUnlocalized] localizes. Read-only and offline: unlike
   /// [check] it does not search for missing repos.
-  Future<List<Node>> outOfSync(List<Node> repos) async {
-    final unlocalized = await _unlocalizedRefs(repos);
-    return <Node>[
-      for (final repo in repos)
-        if (unlocalized.containsKey(repo.directory.path)) repo,
-    ];
-  }
+  Future<List<Node>> outOfSync(List<Node> repos) async =>
+      _withRefs(repos, await _unlocalizedRefs(repos));
 
   // ...........................................................................
   /// Warns about missing repos and throws, listing the unlocalized refs with
@@ -296,10 +291,7 @@ class TicketLocalizer {
       findMissing: warnMissingRepos,
     );
 
-    final outOfSync = [
-      for (final repo in repos)
-        if (status.unlocalized.containsKey(repo.directory.path)) repo,
-    ];
+    final outOfSync = _withRefs(repos, status.unlocalized);
     final names = [for (final r in outOfSync) path.basename(r.directory.path)];
     if (outOfSync.isNotEmpty) {
       final details = <String>[];
@@ -382,6 +374,16 @@ class TicketLocalizer {
       graphError: missing.graphError,
     );
   }
+
+  // ...........................................................................
+  /// The [repos] that [unlocalized] lists refs for, in the given order.
+  static List<Node> _withRefs(
+    List<Node> repos,
+    Map<String, List<UnlocalizedRef>> unlocalized,
+  ) => <Node>[
+    for (final repo in repos)
+      if (unlocalized.containsKey(repo.directory.path)) repo,
+  ];
 
   // ...........................................................................
   /// The unlocalized refs of [repos], keyed by `Directory.path`; only repos
