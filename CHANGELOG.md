@@ -5,6 +5,7 @@
 ### Changed
 
 - Explain how to finish a ticket cleanup when another process still uses the ticket folder
+
 ## 4.16.0 - 2026-11-06
 
 ### Added
