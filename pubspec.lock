@@ -376,14 +376,14 @@ packages:
       path: "../gg_one"
       relative: true
     source: path
-    version: "14.4.12"
+    version: "14.4.13"
   gg_one_commit:
     dependency: "direct overridden"
     description:
       path: "../gg_one_commit"
       relative: true
     source: path
-    version: "2.9.0"
+    version: "2.9.1"
   gg_one_core:
     dependency: "direct main"
     description:
@@ -397,14 +397,14 @@ packages:
       path: "../gg_one_do_publish"
       relative: true
     source: path
-    version: "2.11.8"
+    version: "2.11.9"
   gg_one_merge:
     dependency: "direct overridden"
     description:
       path: "../gg_one_merge"
       relative: true
     source: path
-    version: "2.7.9"
+    version: "2.7.10"
   gg_process:
     dependency: "direct dev"
     description:
