@@ -35,7 +35,10 @@ import 'package:gg_git/gg_git.dart';
 ///
 /// After the ticket folder is gone the caller's shell sits in a deleted
 /// directory, so the command to change to the workspace root is printed in
-/// blue.
+/// blue. Windows refuses to move a folder a terminal or editor sits in;
+/// then the way to finish the cleanup by hand is printed instead.
+///
+/// [moveToTrash] replaces [Trash.moveTicketToTrash] in tests.
 Future<void> cleanUpTicket({
   required Directory ticketDir,
   required List<Directory> repoDirs,
@@ -44,8 +47,10 @@ Future<void> cleanUpTicket({
   required GgLog taskLog,
   ProcessRunner? processRunner,
   GitRetry gitRetry = const GitRetry(),
+  Future<Directory> Function({required Directory ticketDir})? moveToTrash,
 }) async {
   final runner = processRunner ?? defaultProcessRunner;
+  final move = moveToTrash ?? Trash.moveTicketToTrash;
 
   // Normalize before taking the basename. A caller inside the ticket folder
   // passes it as '.', and `basename('.')` is '.' — which then travelled all
@@ -113,7 +118,7 @@ Future<void> cleanUpTicket({
   // Step 2: Move the whole folder in one go — everything the ticket holds
   // travels with it.
   try {
-    final target = await Trash.moveTicketToTrash(ticketDir: ticketDir);
+    final target = await move(ticketDir: ticketDir);
     // Where the ticket went — the user asked for the move, so this is a
     // detail, not a warning. It still goes to ggLog: a non-verbose run must
     // not swallow the one line that says where the work now lives. Normally
@@ -126,6 +131,14 @@ Future<void> cleanUpTicket({
     ggLog(cDetail('Moved ticket $ticketName to $movedTo'));
   } catch (e) {
     ggLog(cError('Failed to move ticket $ticketName to the trash: $e'));
+    if (_isFolderInUse(e)) {
+      _logFolderInUseHint(
+        ticketDir: ticketDir,
+        ticketName: ticketName,
+        workspaceRoot: workspaceRoot,
+        ggLog: ggLog,
+      );
+    }
     return;
   }
 
@@ -133,6 +146,52 @@ Future<void> cleanUpTicket({
   // the way out.
   ggLog(cAction('\nChange to the workspace root with:'));
   ggLog(cCmd('  cd $workspaceRoot'));
+}
+
+/// The Windows error code for »The process cannot access the file because it
+/// is being used by another process« (`ERROR_SHARING_VIOLATION`).
+const int _sharingViolation = 32;
+
+/// Returns true when [error] says that another process still uses the
+/// folder — on Windows a terminal sitting in it or an editor that has it
+/// open. Such a folder can be neither renamed nor deleted.
+bool _isFolderInUse(Object error) =>
+    error is FileSystemException &&
+    error.osError?.errorCode == _sharingViolation;
+
+/// Explains a move that failed because the ticket folder is in use, and how
+/// to finish the cleanup.
+///
+/// The move falls back to copy + delete when the rename is refused, so the
+/// ticket often is in the trash already and only its empty folder is left —
+/// the one thing the deletion could not remove.
+void _logFolderInUseHint({
+  required Directory ticketDir,
+  required String ticketName,
+  required String workspaceRoot,
+  required GgLog ggLog,
+}) {
+  final onlyEmptyFolderLeft =
+      ticketDir.existsSync() && ticketDir.listSync().isEmpty;
+  final folder = path.relative(ticketDir.absolute.path, from: workspaceRoot);
+
+  ggLog(
+    cAction(
+      onlyEmptyFolderLeft
+          ? '\nThe ticket is in the trash already. Only its empty folder is '
+                'left, because a terminal or another program (e.g. VS Code) '
+                'still sits in it. Leave the folder and delete it:'
+          : '\nA terminal or another program (e.g. VS Code) still sits in the '
+                'ticket folder. Leave the folder, close the program and '
+                'retry:',
+    ),
+  );
+  ggLog(cCmd('  cd $workspaceRoot'));
+  ggLog(
+    cCmd(
+      onlyEmptyFolderLeft ? '  rmdir $folder' : '  gg do rm ticket $ticketName',
+    ),
+  );
 }
 
 /// Deletes the remote feature branch [branchName] for [repoDir]. A push the
