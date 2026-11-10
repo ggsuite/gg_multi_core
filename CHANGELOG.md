@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Add the ReadSettings typedef that GgRc.load fits
+
 ## 4.17.0 - 2026-11-06
 
 ### Changed
