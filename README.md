@@ -70,6 +70,10 @@ the foundation the other members of the family (`gg_multi_workspace`,
   a repo needs a release at all — dependency bumps outside the
   published constraint, or manual (non-`#gg:`) changes since the last
   release.
+- **Settings** (`gg_rc.dart`): `GgRc`, the user's `~/.gg_rc` — flags
+  preset per command path, written with every default when missing —
+  and `ReadSettings`, the function type `GgRc.load` fits, for commands
+  that take the reader injected so tests never touch the real file.
 
 ## License
 

@@ -11,6 +11,9 @@ import 'package:gg_console_colors/gg_console_colors.dart';
 import 'package:gg_log/gg_log.dart';
 import 'package:path/path.dart' as path;
 
+/// Reads the user's settings — [GgRc.load] fits.
+typedef ReadSettings = GgRc Function({required GgLog ggLog});
+
 /// The user's own gg settings: `~/.gg_rc`, one JSON object.
 ///
 /// The keys follow the command path and end with the name of the flag they
