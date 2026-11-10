@@ -5,6 +5,7 @@
 ### Added
 
 - Add the ReadSettings typedef that GgRc.load fits
+- Add a blog post about the ReadSettings typedef
 
 ## 4.17.0 - 2026-11-06
 
