@@ -49,7 +49,7 @@ found in the LICENSE file in the root of this package.
   can write `readSettings: GgRc.load` without a wrapper
 - A test passes a closure instead:
   `readSettings: ({required ggLog}) => const GgRc.defaults()`
-- `CLAUDE.md` names the type in the section about `GgRc`
+- `CLAUDE.md` and `README.md` name the type next to `GgRc`
 
 ## Result
 
