@@ -23,7 +23,7 @@
   "interfaces": {
     // "<repo-a>": "why / API"
     "uses": {
-      "gg_one_core": "GgState, GgSystemCommit in TicketLocalizer",
+      "gg_one_core": "GgState, GgSystemCommit in TicketLocalizer; GgRc, ReadSettings re-exported",
       "gg_one": "re-exported gg_one_core API: MessageSheet, RepoPublishConfig, PublishState, VersionSelector, terminal guard",
       "gg_local_package_dependencies": "dependency graph of the ticket repos",
       "gg_localize_refs": "localizes refs between ticket repos",

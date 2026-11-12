@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.19.0 - 2026-11-12
+
+### Changed
+
+- Re-export GgRc and ReadSettings from gg_one_core
+
 ## 4.18.0 - 2026-11-10
 
 ### Added
