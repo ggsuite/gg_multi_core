@@ -6,11 +6,12 @@
 
 library;
 
+export 'package:gg_one_core/gg_one_core.dart' show GgRc, ReadSettings;
+
 export 'src/backend/breaking_release.dart';
 export 'src/backend/constants.dart';
 export 'src/backend/duplicate_repo_cleanup.dart';
 export 'src/backend/filesystem_utils.dart';
-export 'src/backend/gg_rc.dart';
 export 'src/backend/git_platform.dart';
 export 'src/backend/graph_package_dirs.dart';
 export 'src/backend/message_editor_theme.dart';
