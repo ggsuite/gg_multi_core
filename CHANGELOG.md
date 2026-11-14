@@ -1,14 +1,10 @@
 # Changelog
 
-## Unreleased
+## 4.20.0 - 2026-11-14
 
 ### Added
 
 - Add the blog post and describe the installs
-
-Add the blog post of the change
-README: installing the dependencies of many repos
-Tighten the dependencies
 
 ### Changed
 
