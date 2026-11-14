@@ -97,12 +97,9 @@ void main() {
       });
 
       test('retries a set-head the remote dropped', () async {
-        await git(local, ['remote', 'set-head', 'origin', 'main']);
-        final other = await cloneOfRemote();
-        await git(other, ['checkout', '-b', 'develop']);
-        await git(other, ['push', '--set-upstream', 'origin', 'develop']);
-        await git(remote, ['symbolic-ref', 'HEAD', 'refs/heads/develop']);
-        other.deleteSync(recursive: true);
+        // A checkout that never recorded origin/HEAD asks the remote for it
+        // before it is classified.
+        await git(local, ['remote', 'set-head', 'origin', '--delete']);
 
         final processWrapper = _DroppingSetHead();
         final result = await RepoFreshness(
@@ -115,7 +112,7 @@ void main() {
         expect(processWrapper.setHeadCalls, 2);
         expect(
           await git(local, ['symbolic-ref', 'refs/remotes/origin/HEAD']),
-          'refs/remotes/origin/develop',
+          'refs/remotes/origin/main',
         );
       });
 
@@ -273,6 +270,59 @@ void main() {
           ggLog: ggLog,
           directories: [local, other],
         );
+      });
+
+      test('tells which repositories are on the state of their remote '
+          'now', () async {
+        // One repository is brought up to date, one has nothing to update
+        // from, one holds local work.
+        final plain = Directory.systemTemp.createTempSync('freshness_plain_');
+        addTearDown(() => plain.deleteSync(recursive: true));
+        final dirty = await cloneOfRemote();
+        addTearDown(() => dirty.deleteSync(recursive: true));
+        await updateSampleFileWithoutCommitting(dirty);
+
+        final upToDate = <String>[];
+        await expectLater(
+          repoFreshness.updateAll(
+            ggLog: ggLog,
+            directories: [local, plain, dirty],
+            onUpToDate: (dir) => upToDate.add(dir.path),
+          ),
+          throwsA(isA<RepoFreshnessException>()),
+        );
+
+        expect(upToDate, [local.path]);
+      });
+
+      test('tells nothing in a dry run', () async {
+        final upToDate = <String>[];
+        await repoFreshness.updateAll(
+          ggLog: ggLog,
+          directories: [local],
+          dryRun: true,
+          onUpToDate: (dir) => upToDate.add(dir.path),
+        );
+
+        expect(upToDate, isEmpty);
+      });
+
+      test('makes the tags a copy of the remote tags with '
+          'mirrorTags', () async {
+        await git(local, ['tag', 'released']);
+        await git(local, ['push', 'origin', 'released']);
+        await git(local, ['tag', 'local-only']);
+
+        // Without the option a tag only the checkout has stays.
+        await repoFreshness.updateAll(ggLog: ggLog, directories: [local]);
+        expect(await git(local, ['tag', '--list']), 'local-only\nreleased');
+
+        await repoFreshness.updateAll(
+          ggLog: ggLog,
+          directories: [local],
+          mirrorTags: true,
+        );
+        expect(await git(local, ['tag', '--list']), 'released');
       });
 
       test('skips what has nothing to update from', () async {

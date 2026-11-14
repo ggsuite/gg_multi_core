@@ -164,12 +164,26 @@ class TicketLocalizer {
   /// What each git repo of [repoDirs] looks like now, keyed by its normalized
   /// path — the baseline [commit] tells gg's own changes from the user's with.
   Future<Map<String, RepoBaseline>> baseline(List<Directory> repoDirs) async {
+    final dirs = repoDirs.where(_isGitRepo).toList();
+
+    // Read-only and per repo: the repos are asked at the same time.
+    final baselines = await gg.runInParallel<RepoBaseline>(
+      count: dirs.length,
+      maxParallel: gg.GgParallelism.light,
+      ggLog: _quiet,
+      task: (index, _) async {
+        // Both questions at once.
+        final (dirtyPaths, wasCommitted) = await waitForBoth(
+          _dirtyPaths(dirs[index]),
+          _wasCommitted(dirs[index]),
+        );
+        return RepoBaseline(dirtyPaths: dirtyPaths, wasCommitted: wasCommitted);
+      },
+    );
+
     return <String, RepoBaseline>{
-      for (final dir in repoDirs.where(_isGitRepo))
-        path.normalize(dir.path): RepoBaseline(
-          dirtyPaths: await _dirtyPaths(dir),
-          wasCommitted: await _wasCommitted(dir),
-        ),
+      for (var i = 0; i < dirs.length; i++)
+        path.normalize(dirs[i].path): baselines[i],
     };
   }
 
@@ -181,12 +195,18 @@ class TicketLocalizer {
     required List<Node> repos,
     required GgLog ggLog,
     @Deprecated(_upgradeDeprecation) bool upgrade = false,
-  }) => _localize(
-    repos: repos,
-    ggLog: ggLog,
-    installErrorLog: ggLog,
-    upgrade: upgrade,
-  );
+  }) async {
+    try {
+      await _localize(
+        repos: repos,
+        ggLog: ggLog,
+        installErrorLog: ggLog,
+        upgrade: upgrade,
+      );
+    } on _LocalizeFailure catch (failure) {
+      throw failure.error;
+    }
+  }
 
   // ...........................................................................
   /// Commits the gg-owned files of [repoDirs] that changed since [baseline]
@@ -205,25 +225,37 @@ class TicketLocalizer {
       for (final MapEntry(:key, :value) in baseline.entries)
         path.normalize(key): value,
     };
-    final failed = <String>[];
-    for (final dir in repoDirs.where(_isGitRepo)) {
-      // git refuses a partial commit here; the user's commit takes the refs.
-      if (await _isPartialCommitBlocked(dir)) {
-        continue;
-      }
-      try {
-        await _commitRepo(
-          dir: dir,
-          before: before[path.normalize(dir.path)],
-          ggLog: ggLog,
-          message: message,
-          recordState: recordable.contains(path.normalize(dir.path)),
-        );
-      } catch (e) {
-        ggLog(cError('Failed to commit ${path.basename(dir.path)}: $e'));
-        failed.add(path.basename(dir.path));
-      }
-    }
+    final dirs = repoDirs.where(_isGitRepo).toList();
+
+    // A commit touches its own repo only, so the repos are committed at the
+    // same time. Each task answers with the name of its repo when it failed.
+    final failures = await gg.runInParallel<String?>(
+      count: dirs.length,
+      maxParallel: gg.GgParallelism.light,
+      ggLog: ggLog,
+      task: (index, ggLog) async {
+        final dir = dirs[index];
+        // git refuses a partial commit here; the user's commit takes the
+        // refs.
+        if (await _isPartialCommitBlocked(dir)) {
+          return null;
+        }
+        try {
+          await _commitRepo(
+            dir: dir,
+            before: before[path.normalize(dir.path)],
+            ggLog: ggLog,
+            message: message,
+            recordState: recordable.contains(path.normalize(dir.path)),
+          );
+          return null;
+        } catch (e) {
+          ggLog(cError('Failed to commit ${path.basename(dir.path)}: $e'));
+          return path.basename(dir.path);
+        }
+      },
+    );
+    final failed = failures.nonNulls.toList();
 
     if (failed.isNotEmpty) {
       throw Exception(
@@ -255,22 +287,20 @@ class TicketLocalizer {
       recordStateFor: recordStateFor,
     );
 
-    for (final repo in repos) {
+    try {
+      await _localize(
+        repos: repos,
+        ggLog: ggLog,
+        installErrorLog: installErrorLog ?? ggLog,
+        upgrade: upgrade,
+      );
+    } on _LocalizeFailure catch (failure) {
       try {
-        await _localize(
-          repos: [repo],
-          ggLog: ggLog,
-          installErrorLog: installErrorLog ?? ggLog,
-          upgrade: upgrade,
-        );
+        await commitAllBut(path.normalize(failure.repo.directory.path));
       } catch (_) {
-        try {
-          await commitAllBut(path.normalize(repo.directory.path));
-        } catch (_) {
-          // Logged by commit; the failed localization is the cause.
-        }
-        rethrow;
+        // Logged by commit; the failed localization is the cause.
       }
+      throw failure.error;
     }
     await commitAllBut(null);
   }
@@ -391,17 +421,16 @@ class TicketLocalizer {
   Future<Map<String, List<UnlocalizedRef>>> _unlocalizedRefs(
     List<Node> repos,
   ) async {
-    final unlocalized = <String, List<UnlocalizedRef>>{};
-    for (final repo in repos) {
-      final refs = await _refsCheck.get(
-        directory: repo.directory,
-        ggLog: _quiet,
-      );
-      if (refs.isNotEmpty) {
-        unlocalized[repo.directory.path] = refs;
-      }
-    }
-    return unlocalized;
+    // All repos in one call: the check reads the ticket and its ocean, and
+    // asked repo by repo it would read both again for each of them.
+    final refs = await _refsCheck.getAll(
+      directories: <Directory>[for (final repo in repos) repo.directory],
+      ggLog: _quiet,
+    );
+    return <String, List<UnlocalizedRef>>{
+      for (var i = 0; i < repos.length; i++)
+        if (refs[i].isNotEmpty) repos[i].directory.path: refs[i],
+    };
   }
 
   // ...........................................................................
@@ -566,30 +595,52 @@ class TicketLocalizer {
 
   // ...........................................................................
   /// Localizes [repos]; a failed install is logged to [installErrorLog].
+  ///
+  /// The references are rewritten repo by repo, in the given order — a repo
+  /// also writes into the repos it depends on. The installs follow for all
+  /// of them at once ([installReposDependencies]): they are what takes time,
+  /// and each one only needs the references to be in place.
+  ///
+  /// Throws a [_LocalizeFailure] naming the repo whose references could not
+  /// be rewritten; the repos before it are installed all the same.
   Future<void> _localize({
     required List<Node> repos,
     required GgLog ggLog,
     required GgLog installErrorLog,
     bool upgrade = false,
   }) async {
+    final rewritten = <Directory>[];
+    Node? failed;
+    Object? failedWith;
+
     for (final repo in repos) {
       final dir = repo.directory;
-      final repoName = path.basename(dir.path);
       try {
         await _backupPublishTo.get(directory: dir, ggLog: ggLog);
         await _changeRefsToLocal.get(directory: dir, ggLog: ggLog);
+        rewritten.add(dir);
       } catch (e) {
-        ggLog(cError('Failed to localize refs for $repoName: $e'));
-        throw Exception(cError('Failed to localize the refs of $repoName'));
+        failed = repo;
+        failedWith = e;
+        break;
       }
+    }
 
-      await installRepoDependencies(
-        dir: dir,
-        repoName: repoName,
-        ggLog: ggLog,
-        processRunner: _processRunner,
-        upgradeDart: upgrade,
-        errorLog: installErrorLog,
+    await installReposDependencies(
+      dirs: rewritten,
+      ggLog: ggLog,
+      processRunner: _processRunner,
+      upgradeDart: upgrade,
+      errorLog: installErrorLog,
+    );
+
+    // Logged after the installs: the failure is the last thing to read.
+    if (failed != null) {
+      final repoName = path.basename(failed.directory.path);
+      ggLog(cError('Failed to localize refs for $repoName: $failedWith'));
+      throw _LocalizeFailure(
+        failed,
+        Exception(cError('Failed to localize the refs of $repoName')),
       );
     }
   }
@@ -727,6 +778,15 @@ class TicketLocalizer {
           FileSystemEntityType.notFound,
     );
   }
+}
+
+/// The [repo] whose references could not be rewritten, and the [error] the
+/// caller is told about.
+class _LocalizeFailure implements Exception {
+  const _LocalizeFailure(this.repo, this.error);
+
+  final Node repo;
+  final Exception error;
 }
 
 /// Mocktail mock
