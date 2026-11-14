@@ -39,7 +39,10 @@ the foundation the other members of the family (`gg_multi_workspace`,
   localized and the ocean repos that lie between two ticket repos (over
   regular dependency edges, dev ones are ignored) but are missing in
   the ticket; `localizeUnlocalized` fixes the refs, installs the
-  dependencies again (`installRepoDependencies`, Flutter aware) and
+  dependencies again (`installRepoDependencies`, Flutter aware; for
+  many repos `installReposDependencies`: up to eight at a time where
+  a repo resolves from the registry only, one at a time with a git
+  dependency, without a lock file or with a `package.json`) and
   records only gg's own changes as `#gg:` commits — the user's work,
   including a hand-edited manifest, stays uncommitted. `outOfSync`
   names the repos with unlocalized refs and `repoDependenciesOutdated`

@@ -2,13 +2,17 @@
 
 ## Unreleased
 
+### Added
+
+- Add the blog post and describe the installs
+
+Add the blog post of the change
+README: installing the dependencies of many repos
+Tighten the dependencies
+
 ### Changed
 
 - Install, commit and refresh repos at the same time
-
-TicketLocalizer checks all repos with one workspace read, installs and commits them at the same time
-installReposDependencies and runInstalls keep repos with git dependencies one after the other
-RepoFreshness fetches once per repo, takes mirrorTags and tells which repos are up to date
 
 ## 4.19.0 - 2026-11-12
 
