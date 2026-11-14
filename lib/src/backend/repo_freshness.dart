@@ -10,6 +10,7 @@ import 'package:gg_args/gg_args.dart';
 import 'package:gg_console_colors/gg_console_colors.dart';
 import 'package:gg_git/gg_git.dart';
 import 'package:gg_log/gg_log.dart';
+import 'package:gg_one_core/gg_one_core.dart' as gg;
 import 'package:path/path.dart' as path;
 
 /// Why a repository was not brought to the state of its remote main branch.
@@ -120,11 +121,15 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
   /// With [dryRun] nothing is fetched and nothing is merged; the repository is
   /// only classified. Every state that holds local work is decided locally, so
   /// a dry run reports exactly the repositories a real run would stop at.
+  ///
+  /// With [mirrorTags] the fetch also makes the tags of the checkout a copy
+  /// of the remote's (gg_git's `Fetch`).
   @override
   Future<RepoBlocker?> get({
     required GgLog ggLog,
     required Directory directory,
     bool dryRun = false,
+    bool mirrorTags = false,
   }) async {
     // A workspace folder counts as a repository as soon as it holds a
     // manifest, so it may well have no git checkout at all. git itself is
@@ -169,9 +174,16 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
       return RepoBlocker.stashedChanges;
     }
 
+    // One fetch brings the branches and the default branch the remote
+    // declares now: left as the clone recorded it, a default branch renamed
+    // on the server would pass as a feature branch on the next run.
     if (!dryRun) {
-      await _fetch.get(ggLog: ggLog, directory: directory);
-      await _refreshOriginHead(directory);
+      await _fetch.get(
+        ggLog: ggLog,
+        directory: directory,
+        refreshDefaultBranch: true,
+        mirrorTags: mirrorTags,
+      );
     }
 
     // Asked directly rather than through `UpstreamBranch`: a repository
@@ -216,8 +228,9 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
 
   // ...........................................................................
   /// Fast-forwards every repository in [directories], at most [maxParallel] at
-  /// a time, and throws a [RepoFreshnessException] naming each one that holds
-  /// local work. A folder with nothing to update from is skipped silently.
+  /// a time — by default as many as a remote takes at once — and throws a
+  /// [RepoFreshnessException] naming each one that holds local work. A folder
+  /// with nothing to update from is skipped silently.
   ///
   /// Paths are reported relative to [workspacePath] when it is given, so the
   /// report reads `ggdna/dna_dart` instead of an absolute path.
@@ -225,13 +238,21 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
   /// With [dryRun] nothing is changed and nothing is thrown: the repositories
   /// that would stop a real run are logged instead, so a dry run does not
   /// promise a run that then aborts.
+  ///
+  /// [onUpToDate] is told every repository that is on the state of its
+  /// remote afterwards — fetched and fast-forwarded, [mirrorTags] included —
+  /// so a caller that needs that state next does not fetch it a second time.
+  /// Never called in a dry run.
   Future<void> updateAll({
     required GgLog ggLog,
     required Iterable<Directory> directories,
     String? workspacePath,
-    int maxParallel = 4,
+    int? maxParallel,
     bool dryRun = false,
+    bool mirrorTags = false,
+    void Function(Directory directory)? onUpToDate,
   }) async {
+    maxParallel ??= gg.GgParallelism.network;
     final repos = directories.toList();
     final blockers = List<RepoBlocker?>.filled(repos.length, null);
 
@@ -240,7 +261,11 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
         ggLog: ggLog,
         directory: repos[index],
         dryRun: dryRun,
+        mirrorTags: mirrorTags,
       );
+      if (blockers[index] == null && !dryRun) {
+        onUpToDate?.call(repos[index]);
+      }
     });
 
     final blocked = <String, RepoBlocker>{};
@@ -273,13 +298,10 @@ class RepoFreshness extends GgGitBase<RepoBlocker?> {
   final GitRetry _gitRetry;
 
   // ...........................................................................
-  /// `git fetch` leaves `origin/HEAD` as the clone recorded it, so a
-  /// repository whose default branch was renamed on the server keeps pointing
-  /// at the old name — and the new default would pass as a feature branch on
-  /// the next run. `set-head --auto` asks the remote for the current one. It
-  /// is not allowed to fail the update: the fetch just before reached the
-  /// remote, and a remote that cannot answer this leaves things as they are.
-  /// A connection the remote drops is retried.
+  /// Asks the remote which branch it declares as its default, for a checkout
+  /// that never recorded an `origin/HEAD`. It is not allowed to fail the
+  /// update: a remote that cannot answer this leaves things as they are. A
+  /// connection the remote drops is retried.
   Future<void> _refreshOriginHead(Directory directory) async {
     await _gitRetry.run(
       () => processWrapper.run('git', [

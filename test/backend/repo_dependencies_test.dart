@@ -4,12 +4,53 @@
 // Use of this source code is governed by terms that can be
 // found in the LICENSE file in the root of this package.
 
+import 'dart:async';
 import 'dart:io';
 
+import 'package:gg_console_colors/gg_console_colors.dart';
 import 'package:gg_git/gg_git.dart';
 import 'package:gg_multi_core/src/backend/repo_dependencies.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
+
+// .............................................................................
+/// A process runner whose commands end when the test says so.
+class _GatedRunner {
+  _GatedRunner({this.exitCode = 0});
+
+  final int exitCode;
+
+  /// The folder names of the commands in the order they were started.
+  final List<String> started = [];
+
+  /// The commands in the order they were started.
+  final List<List<String>> commands = [];
+
+  final Map<String, Completer<void>> _gates = {};
+
+  Future<ProcessResult> call(
+    String executable,
+    List<String> arguments, {
+    String? workingDirectory,
+    Map<String, String>? environment,
+    bool runInShell = false,
+  }) async {
+    final repo = path.basename(workingDirectory!);
+    started.add(repo);
+    commands.add(<String>[executable, ...arguments]);
+    await _gate(repo).future;
+    return ProcessResult(0, exitCode, '', 'boom');
+  }
+
+  /// Lets the commands of [repo] end, also the ones started later.
+  void finish(String repo) {
+    if (!_gate(repo).isCompleted) {
+      _gate(repo).complete();
+    }
+  }
+
+  Completer<void> _gate(String repo) => _gates[repo] ??= Completer<void>();
+}
 
 void main() {
   late Directory tmp;
@@ -143,6 +184,214 @@ void main() {
       );
       expect(calls, isEmpty);
       expect(messages, isEmpty);
+    });
+  });
+
+  group('installReposDependencies', () {
+    const hostedLock = 'packages:\n  args:\n    source: hosted\n';
+    const gitLock = 'packages:\n  x:\n    source: git\n';
+    late _GatedRunner runner;
+
+    setUp(() => runner = _GatedRunner());
+
+    /// A Dart repo [name] with the given files; null leaves a file out.
+    Directory repo(
+      String name, {
+      String? lock = hostedLock,
+      String pubspec = 'name: x\n',
+      String? overrides,
+      bool packageJson = false,
+    }) {
+      final dir = Directory(path.join(tmp.path, name))..createSync();
+      void write(String file, String? content) {
+        if (content != null) {
+          File(path.join(dir.path, file)).writeAsStringSync(content);
+        }
+      }
+
+      write('pubspec.yaml', pubspec);
+      write('pubspec.lock', lock);
+      write('pubspec_overrides.yaml', overrides);
+      write('package.json', packageJson ? '{}' : null);
+      return dir;
+    }
+
+    /// Installs [dirs] and returns once every install the runner can start
+    /// has started; the installs wait for [_GatedRunner.finish].
+    Future<({Future<void> done})> start(
+      List<Directory> dirs, {
+      bool upgradeDart = false,
+      void Function(String)? errorLog,
+    }) async {
+      final done = installReposDependencies(
+        dirs: dirs,
+        ggLog: messages.add,
+        processRunner: runner.call,
+        upgradeDart: upgradeDart,
+        errorLog: errorLog,
+      );
+      await Future<void>.delayed(Duration.zero);
+      return (done: done);
+    }
+
+    test('does nothing without repos', () async {
+      await installReposDependencies(
+        dirs: [],
+        ggLog: messages.add,
+        processRunner: runner.call,
+      );
+      expect(runner.started, isEmpty);
+    });
+
+    test('installs repos that resolve from the registry at the same time, '
+        'and logs them in their order', () async {
+      final (:done) = await start([repo('a'), repo('b')]);
+      expect(runner.started, ['a', 'b']);
+
+      // The second one finishes first; the log keeps the order.
+      runner.finish('b');
+      runner.finish('a');
+      await done;
+
+      expect(messages.map(rmConsoleColors), [
+        'Executed dart pub get in a.',
+        'Executed dart pub get in b.',
+      ]);
+    });
+
+    test('installs repos with a git dependency one after the other', () async {
+      final (:done) = await start([
+        repo('locked', lock: gitLock),
+        repo('declared', pubspec: 'dependencies:\n  x:\n    git: url\n'),
+        repo(
+          'overridden',
+          overrides: 'dependency_overrides:\n  x:\n    git:\n      url: u\n',
+        ),
+      ]);
+      expect(runner.started, ['locked']);
+
+      runner.finish('locked');
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.started, ['locked', 'declared']);
+
+      runner.finish('declared');
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.started, ['locked', 'declared', 'overridden']);
+
+      runner.finish('overridden');
+      await done;
+    });
+
+    test('does not let a waiting repo hold up the others', () async {
+      final (:done) = await start([
+        repo('git1', lock: gitLock),
+        repo('git2', lock: gitLock),
+        repo('hosted'),
+      ]);
+
+      // git2 waits for git1; the registry-only repo does not.
+      expect(runner.started, unorderedEquals(['git1', 'hosted']));
+
+      runner
+        ..finish('git1')
+        ..finish('hosted');
+      await Future<void>.delayed(Duration.zero);
+      runner.finish('git2');
+      await done;
+      expect(runner.started.last, 'git2');
+    });
+
+    test('takes no chances: a repo without lock file, with a package.json '
+        'or with an unreadable manifest waits its turn', () async {
+      final unreadable = repo('unreadable');
+      File(path.join(unreadable.path, 'pubspec_overrides.yaml'))
+          .writeAsBytesSync([0xff, 0xfe, 0xfd]);
+
+      final (:done) = await start([
+        repo('unlocked', lock: null),
+        repo('typescript', packageJson: true),
+        unreadable,
+      ]);
+      expect(runner.started, ['unlocked']);
+
+      runner.finish('unlocked');
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.started, ['unlocked', 'typescript']);
+
+      // A repo with both manifests installs twice: pub, then the node side.
+      runner.finish('typescript');
+      for (var i = 0; i < 5; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(runner.started, [
+        'unlocked',
+        'typescript',
+        'typescript',
+        'unreadable',
+      ]);
+
+      runner.finish('unreadable');
+      await done;
+    });
+
+    test('lets the next repo install after one that threw', () async {
+      Future<ProcessResult> throwing(
+        String executable,
+        List<String> arguments, {
+        String? workingDirectory,
+        Map<String, String>? environment,
+        bool runInShell = false,
+      }) {
+        if (path.basename(workingDirectory!) == 'broken') {
+          throw const ProcessException('dart', ['pub', 'get']);
+        }
+        return runner.call(
+          executable,
+          arguments,
+          workingDirectory: workingDirectory,
+        );
+      }
+
+      final done = installReposDependencies(
+        dirs: [
+          repo('broken', lock: gitLock),
+          repo('next', lock: gitLock),
+        ],
+        ggLog: messages.add,
+        processRunner: throwing,
+      );
+      runner.finish('next');
+
+      await expectLater(done, throwsA(isA<ProcessException>()));
+      expect(runner.started, ['next']);
+    });
+
+    test('upgrades one repo after the other', () async {
+      final (:done) = await start([repo('a'), repo('b')], upgradeDart: true);
+      expect(runner.started, ['a']);
+      expect(runner.commands.single, ['dart', 'pub', 'upgrade']);
+
+      runner
+        ..finish('a')
+        ..finish('b');
+      await done;
+      expect(runner.started, ['a', 'b']);
+    });
+
+    test('logs a failed install to the errorLog, or else to ggLog', () async {
+      runner = _GatedRunner(exitCode: 1);
+      final errors = <String>[];
+
+      var (:done) = await start([repo('a')], errorLog: errors.add);
+      runner.finish('a');
+      await done;
+      expect(errors.single, contains('Failed to execute dart pub get in a'));
+      expect(messages, isEmpty);
+
+      (:done) = await start([repo('b')]);
+      runner.finish('b');
+      await done;
+      expect(messages.single, contains('Failed to execute dart pub get in b'));
     });
   });
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.20.0 - 2026-11-14
+
+### Added
+
+- Add the blog post and describe the installs
+
+### Changed
+
+- Install, commit and refresh repos at the same time
+
 ## 4.19.0 - 2026-11-12
 
 ### Changed

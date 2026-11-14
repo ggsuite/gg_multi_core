@@ -4,8 +4,10 @@
 // Use of this source code is governed by terms that can be
 // found in the LICENSE file in the root of this package.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:gg_console_colors/gg_console_colors.dart';
 import 'package:gg_git/gg_git.dart';
@@ -59,6 +61,117 @@ Future<void> installRepoDependencies({
     }
   }
 }
+
+/// Installs the dependencies of every repo of [dirs], like
+/// [installRepoDependencies] does for one — several repos at the same time
+/// where that is safe, and logs them in the order of [dirs].
+///
+/// What is safe: Dart repos that resolve from the registry only. Their
+/// installs share nothing but the pub cache, which takes a package that two
+/// of them download at once. A repo with a git dependency fetches into a
+/// git mirror of the pub cache, and two fetches into one mirror fail; a
+/// package manager of the JavaScript world is not known to be safe either.
+/// Such repos — and all of them with [upgradeDart], which asks every git
+/// remote — wait for each other: only one of them installs at a time.
+Future<void> installReposDependencies({
+  required List<Directory> dirs,
+  required GgLog ggLog,
+  required ProcessRunner processRunner,
+  bool upgradeDart = false,
+  GgLog? errorLog,
+}) => runInstalls<void>(
+  dirs: dirs,
+  ggLog: ggLog,
+  oneAtATime: upgradeDart,
+  install: (dir, ggLog) => installRepoDependencies(
+    dir: dir,
+    repoName: path.basename(dir.path),
+    ggLog: ggLog,
+    processRunner: processRunner,
+    upgradeDart: upgradeDart,
+    // Told apart by the caller, so it keeps its own log.
+    errorLog: errorLog ?? ggLog,
+  ),
+);
+
+/// Runs [install] for every repo of [dirs] and returns the results in their
+/// order — several repos at the same time where that is safe, as
+/// [installReposDependencies] describes, the others (all of them with
+/// [oneAtATime]) one after the other. What an install logs reaches [ggLog]
+/// in the order of [dirs].
+///
+/// When installs throw, the installs already running finish, no further one
+/// starts, and the error of the first failed repo in the order of [dirs] is
+/// thrown.
+Future<List<T>> runInstalls<T>({
+  required List<Directory> dirs,
+  required GgLog ggLog,
+  required Future<T> Function(Directory dir, GgLog ggLog) install,
+  bool oneAtATime = false,
+}) {
+  // The one install at a time: each waits for the one before it.
+  var turn = Future<void>.value();
+
+  return gg.runInParallel<T>(
+    count: dirs.length,
+    // Measured: beyond eight installs at a time they only slow each other
+    // down — each one resolves versions, which keeps a processor busy.
+    maxParallel: min(gg.GgParallelism.light, 8),
+    ggLog: ggLog,
+    task: (index, ggLog) async {
+      final dir = dirs[index];
+      if (!oneAtATime && _installsFromRegistryOnly(dir)) {
+        return install(dir, ggLog);
+      }
+
+      // Wait for the install before this one, whatever became of it, and
+      // let the next one wait for this one.
+      final before = turn;
+      final done = Completer<void>();
+      turn = done.future;
+      await before;
+      try {
+        return await install(dir, ggLog);
+      } finally {
+        done.complete();
+      }
+    },
+  );
+}
+
+/// Whether installing the dependencies of [dir] only reads the registry and
+/// the pub cache: a Dart repo that names no git dependency, neither in its
+/// manifests nor — for the dependencies of its dependencies — in its lock
+/// file. Without a lock file nothing is known about those, so the answer is
+/// no; anything unreadable is a no as well.
+bool _installsFromRegistryOnly(Directory dir) {
+  if (File(path.join(dir.path, 'package.json')).existsSync()) {
+    return false;
+  }
+
+  final lock = File(path.join(dir.path, 'pubspec.lock'));
+  if (!lock.existsSync()) {
+    return false;
+  }
+
+  try {
+    final sources = <String>[
+      lock.readAsStringSync(),
+      for (final name in const ['pubspec.yaml', 'pubspec_overrides.yaml'])
+        if (File(path.join(dir.path, name)).existsSync())
+          File(path.join(dir.path, name)).readAsStringSync(),
+    ];
+    return !sources.any(_mentionsGit.hasMatch);
+  } catch (_) {
+    return false;
+  }
+}
+
+/// A git dependency in a manifest (`git:`) or a lock file (`source: git`).
+final RegExp _mentionsGit = RegExp(
+  r'^\s*(git\s*:|source\s*:\s*git\s*$)',
+  multiLine: true,
+);
 
 /// Whether the dependencies of the repo [dir] must be installed again before
 /// it builds against its checkouts: a package manager it uses never installed
