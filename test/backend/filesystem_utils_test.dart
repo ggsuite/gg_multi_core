@@ -69,44 +69,159 @@ void main() {
       expect(copiedDartaFile.readAsStringSync(), 'darta file');
     });
 
-    test('skips .gg on every level by default', () async {
-      // Arrange – a repo-like source with publish progress inside .gg.
-      final ggDir = Directory(path.join(sourceDir.path, '.gg'));
-      await ggDir.create(recursive: true);
+    /// Writes a file at [parts] below the source, creating its folders.
+    void write(List<String> parts) {
+      File(path.joinAll([sourceDir.path, ...parts]))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('content');
+    }
 
-      final publishProgress = File(path.join(ggDir.path, 'gg-publish.json'));
-      await publishProgress.writeAsString('{"done_steps":["merge"]}');
+    /// Whether the copy holds something at [parts].
+    bool isCopied(List<String> parts) {
+      final target = path.joinAll([destinationDir.path, ...parts]);
+      return FileSystemEntity.typeSync(target) != FileSystemEntityType.notFound;
+    }
 
-      final ggJson = File(path.join(ggDir.path, '.gg.json'));
-      await ggJson.writeAsString('{}');
+    group('by default', () {
+      /// The files of one working copy, all of them in the .gg folder.
+      const workingCopyFiles = [
+        'publish_config.json',
+        'publish_state.json',
+        'create_repo_state.json',
+        'gg-publish.json',
+        '.gg-publish.json',
+        '.ticket.json',
+        'ticket.json',
+        '.gg_localize_refs_publish_to_backup.json',
+      ];
 
-      // Act.
-      await copyDirectory(sourceDir, destinationDir);
+      test('skips the files of one working copy in the .gg folder, '
+          'not their siblings', () async {
+        for (final name in workingCopyFiles) {
+          write(['.gg', name]);
+        }
+        write(['.gg', 'gg.json']);
 
-      // Assert – the publish progress must not travel with the copy,
-      // its sibling .gg.json must.
-      final copiedProgress = File(
-        path.join(destinationDir.path, '.gg', 'gg-publish.json'),
-      );
-      final copiedGgJson = File(
-        path.join(destinationDir.path, '.gg', '.gg.json'),
-      );
-      expect(copiedProgress.existsSync(), isFalse);
-      expect(copiedGgJson.existsSync(), isTrue);
+        await copyDirectory(sourceDir, destinationDir);
+
+        // Publish answers and progress, the progress of creating the
+        // repository and the ticket marker stay where they are.
+        for (final name in workingCopyFiles) {
+          expect(isCopied(['.gg', name]), isFalse, reason: name);
+        }
+        expect(isCopied(['.gg', 'gg.json']), isTrue);
+      });
+
+      test('copies files of the same names everywhere else', () async {
+        // A repository tracks such files as fixtures of its tests, or
+        // because they mean something else there.
+        for (final name in workingCopyFiles) {
+          write([name]);
+          write(['test', 'sample', name]);
+          write(['test', 'sample', '.gg', name]);
+        }
+
+        await copyDirectory(sourceDir, destinationDir);
+
+        for (final name in workingCopyFiles) {
+          expect(isCopied([name]), isTrue, reason: name);
+          expect(isCopied(['test', 'sample', name]), isTrue, reason: name);
+          expect(
+            isCopied(['test', 'sample', '.gg', name]),
+            isTrue,
+            reason: name,
+          );
+        }
+      });
+
+      test('skips node_modules on every level', () async {
+        write(['node_modules', 'dep', 'index.js']);
+        write(['packages', 'a', 'node_modules', 'dep', 'index.js']);
+        write(['packages', 'a', 'index.js']);
+
+        await copyDirectory(sourceDir, destinationDir);
+
+        expect(isCopied(['node_modules']), isFalse);
+        expect(isCopied(['packages', 'a', 'node_modules']), isFalse);
+        expect(isCopied(['packages', 'a', 'index.js']), isTrue);
+      });
     });
 
-    test('skips the progress of gg do create repo', () async {
-      final ggDir = Directory(path.join(sourceDir.path, '.gg'));
-      await ggDir.create(recursive: true);
-      await File(path.join(ggDir.path, 'create_repo_state.json'))
-          .writeAsString('{"done":["scaffold"]}');
+    group('with skipNames', () {
+      test('skips a plain name on every level', () async {
+        write(['build', 'out.txt']);
+        write(['sub', 'build', 'out.txt']);
+        write(['sub', 'kept.txt']);
 
-      await copyDirectory(sourceDir, destinationDir);
+        await copyDirectory(sourceDir, destinationDir, skipNames: {'build'});
 
-      final copied = File(
-        path.join(destinationDir.path, '.gg', 'create_repo_state.json'),
-      );
-      expect(copied.existsSync(), isFalse);
+        expect(isCopied(['build']), isFalse);
+        expect(isCopied(['sub', 'build']), isFalse);
+        expect(isCopied(['sub', 'kept.txt']), isTrue);
+      });
+
+      test('skips an entry with a slash at that place only', () async {
+        write(['a', 'b', 'skipped.txt']);
+        write(['b', 'skipped.txt']);
+        write(['a', 'skipped.txt']);
+        write(['a', 'b', 'c', 'skipped.txt']);
+
+        await copyDirectory(
+          sourceDir,
+          destinationDir,
+          skipNames: {'a/b/skipped.txt'},
+        );
+
+        expect(isCopied(['a', 'b', 'skipped.txt']), isFalse);
+        expect(isCopied(['b', 'skipped.txt']), isTrue);
+        expect(isCopied(['a', 'skipped.txt']), isTrue);
+        expect(isCopied(['a', 'b', 'c', 'skipped.txt']), isTrue);
+      });
+
+      test('skips a whole folder named by its place', () async {
+        write(['a', 'cache', 'x.txt']);
+        write(['cache', 'x.txt']);
+
+        await copyDirectory(sourceDir, destinationDir, skipNames: {'a/cache'});
+
+        expect(isCopied(['a', 'cache']), isFalse);
+        expect(isCopied(['a']), isTrue);
+        expect(isCopied(['cache', 'x.txt']), isTrue);
+      });
+
+      test('takes a leading slash for the source directory itself', () async {
+        write(['ticket.json']);
+        write(['sub', 'ticket.json']);
+
+        await copyDirectory(
+          sourceDir,
+          destinationDir,
+          skipNames: {'/ticket.json'},
+        );
+
+        expect(isCopied(['ticket.json']), isFalse);
+        expect(isCopied(['sub', 'ticket.json']), isTrue);
+      });
+
+      test('ignores trailing and doubled slashes of an entry', () async {
+        write(['a', 'b', 'x.txt']);
+        write(['a', 'kept.txt']);
+
+        await copyDirectory(sourceDir, destinationDir, skipNames: {'/a//b/'});
+
+        expect(isCopied(['a', 'b']), isFalse);
+        expect(isCopied(['a', 'kept.txt']), isTrue);
+      });
+
+      test('copies everything when the set is empty', () async {
+        write(['node_modules', 'dep', 'index.js']);
+        write(['.gg', 'publish_state.json']);
+
+        await copyDirectory(sourceDir, destinationDir, skipNames: const {});
+
+        expect(isCopied(['node_modules', 'dep', 'index.js']), isTrue);
+        expect(isCopied(['.gg', 'publish_state.json']), isTrue);
+      });
     });
 
     test('copies symlinks as symlinks', () async {

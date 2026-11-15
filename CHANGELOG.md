@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Skip gg's working-copy files only where gg writes them
+
 ## 4.20.0 - 2026-11-14
 
 ### Added
