@@ -64,6 +64,14 @@ the foundation the other members of the family (`gg_multi_workspace`,
   likely private repositories the account has no access to — are reported
   too. Every report (`missing_repo_messages.dart`) names the probable
   cause and the command to run or try next.
+- **Copying a repository** (`filesystem_utils.dart`): `copyDirectory`
+  copies a directory tree. `skipNames` says what is left out: a plain
+  name such as `node_modules` on every level, an entry with a `/` such
+  as `.gg/publish_state.json` only at that place below the source. By
+  default it leaves out `node_modules` and gg's own working files in
+  the `.gg` folder of the copied directory, so a file a repository
+  tracks under one of their names, e.g. `test/data/ticket.json`, is
+  copied.
 - **Git helpers** (`git_snapshot.dart`): `runGit` and
   `captureUncommitted`, shared by the push and publish flows.
 - **Process running** (`process_runner.dart`): the family's single

@@ -15,7 +15,12 @@ import 'package:path/path.dart' as path;
 /// * Copies symlinks *as symlinks*, keeping their target as it is written in
 ///   the source link. A link is neither followed nor dropped, so a repository
 ///   holding one arrives complete in the ticket.
-/// * Skips entries (on every level) whose name is listed in [skipNames].
+/// * Skips the entries listed in [skipNames]. An entry is either
+///   * a plain name, e.g. `node_modules`: skipped on every level, or
+///   * a path with `/`, e.g. `.gg/publish_state.json` or `/ticket.json`:
+///     skipped at that one place below [source] only. A file of the same
+///     name anywhere else is copied.
+///
 ///   The default skip-list excludes `node_modules` so pnpm's symlinked
 ///   `node_modules/.pnpm/<pkg>/node_modules/<dep>` chains never get
 ///   dereferenced and reduced to a flat copy. The destination repo is
@@ -30,26 +35,67 @@ import 'package:path/path.dart' as path;
 ///   in the ocean for the same reason: it describes the run that created
 ///   the repository, not the ticket copy.
 ///
+///   These files are named by their place in the `.gg` folder of [source],
+///   the only place gg writes them to. A repository may well track files of
+///   the same name elsewhere — a test fixture `test/sample/ticket.json`, a
+///   `publish_config.json` of its own — and a copy without them would be a
+///   working copy git reports as changed.
+///
 /// Throws an [ArgumentError] if the source directory does not exist.
 Future<void> copyDirectory(
   Directory source,
   Directory destination, {
   Set<String> skipNames = const {
     'node_modules',
-    'publish_config.json',
-    'publish_state.json',
-    'create_repo_state.json',
-    'gg-publish.json',
-    '.gg-publish.json',
-    '.ticket.json',
-    'ticket.json',
-    '.gg_localize_refs_publish_to_backup.json',
+    '.gg/publish_config.json',
+    '.gg/publish_state.json',
+    '.gg/create_repo_state.json',
+    '.gg/gg-publish.json',
+    '.gg/.gg-publish.json',
+    '.gg/.ticket.json',
+    '.gg/ticket.json',
+    '.gg/.gg_localize_refs_publish_to_backup.json',
   },
 }) async {
   if (!source.existsSync()) {
     throw ArgumentError('Source directory ${source.path} does not exist');
   }
 
+  // A plain name applies on every level, an entry with a slash names one
+  // place below the source. Leading, trailing and doubled slashes do not
+  // matter: `/a//b/` is the place `a/b`.
+  final names = <String>{};
+  final places = <String>{};
+  for (final entry in skipNames) {
+    if (entry.contains('/')) {
+      places.add(entry.split('/').where((part) => part.isNotEmpty).join('/'));
+    } else {
+      names.add(entry);
+    }
+  }
+
+  await _copyDirectory(
+    source,
+    destination,
+    names: names,
+    places: places,
+    parent: '',
+  );
+}
+
+// .............................................................................
+/// Copies [source] to [destination] and leaves out the entries named
+/// [names], on every level, and the ones at one of the [places].
+///
+/// [parent] is the place of [source] below the directory the copy started
+/// with, written with `/` and empty for that directory itself.
+Future<void> _copyDirectory(
+  Directory source,
+  Directory destination, {
+  required Set<String> names,
+  required Set<String> places,
+  required String parent,
+}) async {
   // Ensure the destination directory exists.
   if (!destination.existsSync()) {
     await destination.create(recursive: true);
@@ -62,7 +108,8 @@ Future<void> copyDirectory(
     followLinks: false,
   )) {
     final name = path.basename(entity.path);
-    if (skipNames.contains(name)) continue;
+    final place = parent.isEmpty ? name : '$parent/$name';
+    if (names.contains(name) || places.contains(place)) continue;
     String newPath = path.join(destination.path, name);
     // change .darta to .dart if the file is a .darta file
     if (entity is File && path.extension(entity.path) == '.darta') {
@@ -78,7 +125,13 @@ Future<void> copyDirectory(
       await entity.copy(newPath);
     } else if (entity is Directory) {
       // Recurse into sub-directories.
-      await copyDirectory(entity, Directory(newPath), skipNames: skipNames);
+      await _copyDirectory(
+        entity,
+        Directory(newPath),
+        names: names,
+        places: places,
+        parent: place,
+      );
     }
   }
 }
