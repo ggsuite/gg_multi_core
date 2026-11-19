@@ -131,7 +131,8 @@ List<String> missingFromOceanReport(
 
 // .............................................................................
 /// The report about [names], ocean repos the ticket lacks between its repos
-/// and the [breaking] ones, whose release breaks its dependents.
+/// and the [breaking] ones, whose release breaks its dependents. The commands
+/// that change the ticket add them by themselves.
 List<String> missingBetweenReport(
   List<String> names, {
   required Iterable<String> breaking,
@@ -146,10 +147,63 @@ List<String> missingBetweenReport(
       'them, they keep the old version and the ticket repos above resolve '
       'two incompatible ones.',
     ),
-    cAction('Run ') +
+    cCmd('gg do commit') +
+        cAction(', ') +
+        cCmd('push') +
+        cAction(', ') +
+        cCmd('localize') +
+        cAction(', ') +
+        cCmd('review') +
+        cAction(' and ') +
+        cCmd('publish') +
+        cAction(' add them to the ticket by themselves; ') +
         cCmd('gg do add transitive for $releases') +
-        cAction(' to add them.\n'),
+        cAction(' adds them right away.\n'),
   ];
+}
+
+// .............................................................................
+/// The report about [names], the repos between the ticket repos and the
+/// [breaking] ones that could not be added to the ticket because of [error].
+List<String> addBetweenFailedReport(
+  List<String> names, {
+  required Iterable<String> breaking,
+  required String error,
+}) {
+  final releases = (breaking.toList()..sort()).join(' ');
+  return <String>[
+    cWarn('\n⚠️ Could not add ${names.join(', ')} to the ticket: $error'),
+    cDetail(
+      '  Probably the ocean copy holds local work, or the remote could not '
+      'be reached.',
+    ),
+    cAction('  Fix that, then run ') +
+        cCmd('gg do add transitive for $releases') +
+        cAction('.\n'),
+  ];
+}
+
+// .............................................................................
+/// The line saying that [added] are in the ticket now and the review runs
+/// again with them — [before] the step it names, if any.
+String addedBetweenMessage(List<String> added, {String? before}) {
+  final them = added.length == 1 ? 'it' : 'them';
+  final step = before == null ? '' : ' before the $before';
+  return cWarn(
+    '⚠️ Added ${added.join(', ')} to the ticket — reviewing again with '
+    '$them$step.',
+  );
+}
+
+// .............................................................................
+/// The line announcing that the repos between the ticket repos and the
+/// [breaking] ones, whose release breaks its dependents, are added now.
+String addingBetweenMessage(Iterable<String> breaking) {
+  final releases = (breaking.toList()..sort()).join(', ');
+  return cDetail(
+    '\n✓ The release of $releases breaks its dependents — adding the repos '
+    'between it and the ticket repos depending on it',
+  );
 }
 
 // .............................................................................

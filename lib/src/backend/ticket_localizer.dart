@@ -87,7 +87,8 @@ class RepoBaseline {
 
 /// Keeps the references between the repositories of a ticket localized.
 ///
-/// Shared by `do add`, `do localize`, `can commit`, `do commit`, `do push`.
+/// Shared by `do add`, `do localize`, `can commit`, `do commit`, `do push`,
+/// `do review` and `do publish`.
 class TicketLocalizer {
   /// Constructor.
   TicketLocalizer({
@@ -558,6 +559,85 @@ class TicketLocalizer {
       'The reports above name the cause and the command.',
     ];
     throw Exception(cError(reasons.join(' ')));
+  }
+
+  // ...........................................................................
+  /// Adds to the ticket in [ticketDir] the ocean repos between its repos and
+  /// the releases that break their dependents — [breaking], or by default
+  /// the recorded ones (see [ReposBetween]) — with [addReposBetween], and
+  /// returns the folder names that landed in the ticket.
+  ///
+  /// Nothing is logged and nothing added without [addReposBetween], when no
+  /// release breaks or when no repo is missing; when no release breaks, not
+  /// even the graph is built. The ocean copies of the repos found are
+  /// brought to their remote state first, as in [throwWhenReposMissing]: an
+  /// edge only a stale checkout still has must not drag a repo into the
+  /// ticket.
+  ///
+  /// Like every missing repo, these never block: a copy that cannot be
+  /// refreshed — local work, no remote — is left to the reports of the
+  /// checks, and an add that fails is reported with its error.
+  Future<List<String>> addMissingBetween({
+    required Directory ticketDir,
+    required AddReposBetween? addReposBetween,
+    required GgLog ggLog,
+    Set<String>? breaking,
+  }) async {
+    final ticketPath = path.absolute(ticketDir.path);
+    final oceanPath = _oceanPathOf(ticketDir);
+    if (addReposBetween == null || !Directory(oceanPath).existsSync()) {
+      return const <String>[];
+    }
+
+    final releases =
+        breaking ??
+        await recordedBreakingRepos(
+          repoDirs: RepoFolderResolver.repoDirs(ticketPath),
+          ticketDir: ticketDir,
+          readManifestVersion: _readManifestVersion,
+        );
+    Future<List<String>> between() async => (await _reposBetween.find(
+      ticketPath: ticketPath,
+      oceanPath: oceanPath,
+      from: releases,
+    )).names;
+
+    var names = await between();
+    if (names.isEmpty) {
+      return const <String>[];
+    }
+    // The refresh touches ocean repos only: what breaks stays the same. A
+    // copy it cannot refresh cannot be copied either.
+    if (await _refreshOceanRepos(ticketDir, names) != null) {
+      return const <String>[];
+    }
+    names = await between();
+    if (names.isEmpty) {
+      return const <String>[];
+    }
+
+    ggLog(addingBetweenMessage(releases));
+    Set<String> ticketRepos() => {
+      for (final dir in RepoFolderResolver.repoDirs(ticketPath))
+        path.basename(dir.path),
+    };
+    final before = ticketRepos();
+    try {
+      await addReposBetween(
+        ticketDir: ticketDir,
+        releases: releases,
+        ggLog: ggLog,
+      );
+    } catch (e) {
+      addBetweenFailedReport(
+        names,
+        breaking: releases,
+        error: plainError(e),
+      ).forEach(ggLog);
+    }
+    // What the add claims is not what counts: a repo it could not copy would
+    // be added again and again.
+    return ticketRepos().difference(before).toList()..sort();
   }
 
   // ...........................................................................
