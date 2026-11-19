@@ -39,9 +39,9 @@
 
     // "<repo-b>": "why / API"
     "usedBy": {
-      "gg_multi_commit": "WorkspaceUtils, TicketState, TicketLocalizer; PublishPlanner for gg do review",
-      "gg_multi_do_publish": "PublishPlanner, PublishSkipCheck, TicketState, cleanUpTicket",
-      "gg_multi_workspace": "RepoFolderResolver, WorkspaceUtils, Organization, UrlParser, Trash, TicketJson",
+      "gg_multi_commit": "WorkspaceUtils, TicketState, TicketLocalizer, AddReposBetween; PublishPlanner for gg do review",
+      "gg_multi_do_publish": "PublishPlanner, PublishSkipCheck, TicketState, cleanUpTicket, TicketLocalizer.addMissingBetween",
+      "gg_multi_workspace": "RepoFolderResolver, WorkspaceUtils, Organization, UrlParser, Trash, TicketJson, TicketLocalizer, AddReposBetween",
       "gg_multi": "re-exports gg_multi_core",
     },
   },

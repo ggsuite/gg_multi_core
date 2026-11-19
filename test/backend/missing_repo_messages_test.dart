@@ -126,13 +126,51 @@ void main() {
     );
   });
 
-  test('missingBetweenReport names the breaking releases and the command', () {
+  test('missingBetweenReport names the breaking releases and the commands '
+      'adding the repos', () {
     final text = plain(missingBetweenReport(['c', 'd'], breaking: ['f', 'e']));
 
     expect(text, contains('  - c\n  - d'));
     expect(text, contains('They depend on e f, whose next release breaks'));
     expect(text, contains('two incompatible ones'));
-    expect(text, contains('Run gg do add transitive for e f to add them.'));
+    expect(
+      text,
+      contains(
+        'gg do commit, push, localize, review and publish add them to the '
+        'ticket by themselves; gg do add transitive for e f adds them right '
+        'away.',
+      ),
+    );
+  });
+
+  test('addBetweenFailedReport names the error and the command', () {
+    final text = plain(
+      addBetweenFailedReport(['c'], breaking: ['f', 'e'], error: 'boom'),
+    );
+
+    expect(text, contains('Could not add c to the ticket: boom'));
+    expect(text, contains('local work'));
+    expect(text, contains('then run gg do add transitive for e f.'));
+  });
+
+  test('addedBetweenMessage names the added repos and the next step', () {
+    expect(
+      rmControls(addedBetweenMessage(['m'], before: 'publish')),
+      '⚠️ Added m to the ticket — reviewing again with it before the '
+      'publish.',
+    );
+    expect(
+      rmControls(addedBetweenMessage(['m', 'n'])),
+      '⚠️ Added m, n to the ticket — reviewing again with them.',
+    );
+  });
+
+  test('addingBetweenMessage names the breaking releases', () {
+    expect(
+      rmControls(addingBetweenMessage(['f', 'e'])),
+      '\n✓ The release of e, f breaks its dependents — adding the repos '
+      'between it and the ticket repos depending on it',
+    );
   });
 
   test('brokenGraphReport points at the graph', () {

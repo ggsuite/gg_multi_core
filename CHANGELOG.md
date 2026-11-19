@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.20.2 - 2026-11-19
+
+### Added
+
+- Add the repos a breaking release strands
+
 ## 4.20.1 - 2026-11-15
 
 ### Changed

@@ -9,6 +9,7 @@ import 'dart:io';
 
 import 'package:gg_local_package_dependencies/gg_local_package_dependencies.dart';
 import 'package:gg_localize_refs/gg_localize_refs.dart';
+import 'package:gg_log/gg_log.dart';
 import 'package:gg_multi_core/gg_multi_core.dart';
 import 'package:gg_one_core/gg_one_core.dart' as gg;
 import 'package:gg_process/gg_process.dart';
@@ -609,7 +610,9 @@ void main() {
             messages,
             containsAllInOrder([
               'Run gg do add x in ${tmp.path} to clone them into the ocean.\n',
-              'Run gg do add transitive for d to add them.\n',
+              'gg do commit, push, localize, review and publish add them to '
+                  'the ticket by themselves; gg do add transitive for d adds '
+                  'them right away.\n',
             ]),
           );
         });
@@ -1395,6 +1398,191 @@ void main() {
           expect(messages, ['✓ Localized the references of a']);
         },
       );
+    });
+
+    // .........................................................................
+    group('addMissingBetween', () {
+      late List<Set<String>> addCalls;
+      late List<String> refreshed;
+      late List<String> added;
+      late Object? addError;
+      late List<String>? claimed;
+
+      /// Records its calls and puts [added] into the ticket, as
+      /// `gg do add transitive for` does — then throws [addError], if any;
+      /// answers [claimed], else [added].
+      Future<List<String>> addReposBetween({
+        required Directory ticketDir,
+        required Set<String> releases,
+        required GgLog ggLog,
+      }) async {
+        expect(ticketDir.path, ticket.path);
+        addCalls.add(releases);
+        for (final name in added) {
+          write(ticket, '$name/pubspec.yaml', pubspec(name));
+        }
+        if (addError != null) {
+          throw addError!;
+        }
+        return claimed ?? added;
+      }
+
+      /// [localizer] with an ocean refresh that runs [onRefresh].
+      void refreshRuns([void Function()? onRefresh]) {
+        final freshness = MockRepoFreshness();
+        when(
+          () => freshness.updateAll(
+            ggLog: any(named: 'ggLog'),
+            directories: any(named: 'directories'),
+            workspacePath: any(named: 'workspacePath'),
+          ),
+        ).thenAnswer((invocation) async {
+          final dirs =
+              invocation.namedArguments[#directories] as List<Directory>;
+          refreshed.addAll(dirs.map((d) => path.basename(d.path)));
+          onRefresh?.call();
+        });
+        localizer = TicketLocalizer(
+          ggLog: ggLog,
+          processRunner: fakeRunner,
+          repoFreshness: freshness,
+        );
+      }
+
+      setUp(() {
+        addCalls = <Set<String>>[];
+        refreshed = <String>[];
+        added = <String>['c'];
+        addError = null;
+        claimed = null;
+        refreshRuns();
+      });
+
+      Future<List<String>> addMissing({
+        Set<String>? breaking,
+        bool withHook = true,
+      }) => localizer.addMissingBetween(
+        ticketDir: ticket,
+        addReposBetween: withHook ? addReposBetween : null,
+        ggLog: ggLog,
+        breaking: breaking,
+      );
+
+      test('adds the repos between the recorded breaking releases and the '
+          'ticket repos, after refreshing their ocean copies', () async {
+        await ticketMissingC();
+        messages.clear();
+
+        expect(await addMissing(), ['c']);
+
+        expect(addCalls, [
+          {'d'},
+        ]);
+        expect(refreshed, ['c']);
+        expect(messages, [
+          rmControls(addingBetweenMessage(['d'])),
+        ]);
+      });
+
+      test('adds the repos between the releases it is given', () async {
+        await ticketMissingC(increment: null);
+        await ticketMissingC2();
+        added = <String>['c2'];
+        messages.clear();
+
+        expect(await addMissing(breaking: {'d2'}), ['c2']);
+
+        expect(addCalls, [
+          {'d2'},
+        ]);
+        expect(refreshed, ['c2']);
+      });
+
+      test('adds nothing and refreshes nothing when no release '
+          'breaks', () async {
+        await ticketMissingC(increment: 'minor');
+        messages.clear();
+
+        expect(await addMissing(), isEmpty);
+        expect(await addMissing(breaking: const <String>{}), isEmpty);
+
+        expect(addCalls, isEmpty);
+        expect(refreshed, isEmpty);
+        expect(messages, isEmpty);
+      });
+
+      test('adds nothing when the refreshed ocean copy no longer lies '
+          'between', () async {
+        await ticketMissingC();
+        // The remote of c dropped its edge to d.
+        refreshRuns(() => oceanRepo('c'));
+        messages.clear();
+
+        expect(await addMissing(), isEmpty);
+
+        expect(refreshed, ['c']);
+        expect(addCalls, isEmpty);
+        expect(messages, isEmpty);
+      });
+
+      test('adds nothing without a hook', () async {
+        await ticketMissingC();
+
+        expect(await addMissing(withHook: false), isEmpty);
+
+        expect(refreshed, isEmpty);
+        expect(messages, isEmpty);
+      });
+
+      test('adds nothing when the ocean copy cannot be refreshed', () async {
+        await ticketMissingC();
+        refreshRuns(() => throw Exception('c has uncommitted changes'));
+        messages.clear();
+
+        expect(await addMissing(), isEmpty);
+
+        expect(addCalls, isEmpty);
+        expect(messages, isEmpty);
+      });
+
+      test('reports a failing add and returns only what landed in the '
+          'ticket', () async {
+        await ticketMissingC();
+        addError = Exception('c in ocean has uncommitted changes');
+        messages.clear();
+
+        // c landed before the add failed.
+        expect(await addMissing(), ['c']);
+
+        expect(messages, [
+          rmControls(addingBetweenMessage(['d'])),
+          for (final line in addBetweenFailedReport(
+            ['c'],
+            breaking: ['d'],
+            error: 'c in ocean has uncommitted changes',
+          ))
+            rmControls(line),
+        ]);
+      });
+
+      test('returns nothing when the add copied nothing', () async {
+        await ticketMissingC();
+        // The add claims c, but could not copy it.
+        added = <String>[];
+        claimed = <String>['c'];
+
+        expect(await addMissing(), isEmpty);
+        expect(addCalls, hasLength(1));
+      });
+
+      test('adds nothing without an ocean', () async {
+        await repo('a', {'pubspec.yaml': pubspec('a'), ...breakingRelease});
+
+        expect(await addMissing(), isEmpty);
+
+        expect(addCalls, isEmpty);
+        expect(messages, isEmpty);
+      });
     });
   });
 }
